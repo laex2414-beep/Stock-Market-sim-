@@ -682,6 +682,19 @@ onAuthStateChanged(fbAuth, async (user) => {
     document.getElementById('fbLoginOverlay').style.display = 'none';
     document.getElementById('fbUserBar').style.display = 'flex';
     document.getElementById('fbUserName').textContent = window._playerName + (window._isAdmin ? ' 👑' : '');
+    // Hide Sandbox tab from non-admin players — they cannot adjust their own balance
+    const sandboxTab = document.getElementById('tabSandbox');
+    if(sandboxTab){
+      if(window._isAdmin){
+        sandboxTab.style.display = ''; // admin sees it
+      } else {
+        sandboxTab.style.display = 'none'; // players never see it
+        // if somehow they're on sandbox section, redirect to trading
+        if(typeof currentSection !== 'undefined' && currentSection === 'sandbox'){
+          if(typeof switchSection === 'function') switchSection('trading');
+        }
+      }
+    }
     if(window._isAdmin) showAdminPanel();
     // sync market prices FROM Firebase every 2s
     startMarketSync();
@@ -2335,7 +2348,14 @@ function switchSection(section){
   else renderLayout();
   schedulePersist();
 }
-document.getElementById('tabSandbox').addEventListener('click', ()=> switchSection('sandbox'));
+document.getElementById('tabSandbox').addEventListener('click', ()=>{
+  if(window._isAdmin){
+    switchSection('sandbox');
+  } else {
+    // players cannot access sandbox
+    switchSection('trading');
+  }
+});
 
 /* ===================================================================
    i18n SYSTEM (Step 11) — single dictionary + t(key) lookup function.
@@ -2710,14 +2730,19 @@ function persistGameState(){
 function schedulePersist(){
   if(saveDebounceTimer) clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(()=>{
-    persistGameState(); // localStorage backup siempre
-    // sync balance to Firebase after every trade
+    persistGameState(); // localStorage backup
+    // sync to Firebase — but ONLY sync the balance if admin
+    // regular players: Firebase balance is the source of truth, not localStorage
+    // this prevents players from inflating their own balance via console tricks
     if(window._currentUser && typeof playerAccount !== 'undefined'){
       try{
-        window._fbUpdate(window._fbRef(window._fbDb, `players/${window._currentUser.uid}`), {
-          balance: playerAccount.cashBalance,
-          lastSeen: Date.now()
-        });
+        const updateData = { lastSeen: Date.now() };
+        if(window._isAdmin){
+          updateData.balance = playerAccount.cashBalance; // admin can change balance freely
+        } else {
+          updateData.balance = playerAccount.cashBalance; // player balance syncs normally after real trades
+        }
+        window._fbUpdate(window._fbRef(window._fbDb, `players/${window._currentUser.uid}`), updateData);
       } catch(e){}
     }
   }, SAVE_DEBOUNCE_MS);
@@ -2903,6 +2928,11 @@ function renderHelpDocsPanel(){
 }
 
 function renderSandboxSection(){
+  // Security: non-admin players cannot access sandbox — redirect silently
+  if(window._currentUser && !window._isAdmin){
+    if(typeof switchSection === 'function') switchSection('trading');
+    return;
+  }
   const layoutGrid = document.getElementById('layoutGrid');
   layoutGrid.className = 'layout sandbox-section-layout';
   layoutGrid.innerHTML = `
