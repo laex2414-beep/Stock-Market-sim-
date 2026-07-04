@@ -663,13 +663,21 @@ onAuthStateChanged(fbAuth, async (user) => {
     // check if admin
     const adminSnap = await get(ref(fbDb, `admins/${user.uid}`));
     window._isAdmin = adminSnap.exists();
-    // get player name
-    const nameSnap = await get(ref(fbDb, `players/${user.uid}/name`));
-    window._playerName = nameSnap.exists() ? nameSnap.val() : user.email.split('@')[0];
-    // load player balance from Firebase (overrides localStorage)
-    const balSnap = await get(ref(fbDb, `players/${user.uid}/balance`));
-    if(balSnap.exists() && typeof window.playerAccount !== 'undefined'){
-      window.playerAccount.cashBalance = balSnap.val();
+    // load full player profile from Firebase
+    const profileSnap = await get(ref(fbDb, `players/${user.uid}`));
+    if(profileSnap.exists()){
+      const profile = profileSnap.val();
+      window._playerName = profile.name || user.email.split('@')[0];
+      // Always load balance from Firebase (source of truth — admin can change it)
+      if(typeof window.playerAccount !== 'undefined' && profile.balance !== undefined){
+        window.playerAccount.cashBalance = profile.balance;
+      }
+    } else {
+      // New player with no profile yet (edge case) — create one with $1,000
+      window._playerName = user.email.split('@')[0];
+      const startBal = 1000;
+      await set(ref(fbDb, `players/${user.uid}`), { name: window._playerName, balance: startBal, lastSeen: Date.now(), joinedAt: Date.now() });
+      if(typeof window.playerAccount !== 'undefined') window.playerAccount.cashBalance = startBal;
     }
     document.getElementById('fbLoginOverlay').style.display = 'none';
     document.getElementById('fbUserBar').style.display = 'flex';
@@ -776,6 +784,51 @@ window._adminAddPlayer = async function(){
 };
 
 // ========== LOGIN/REGISTER FORM HANDLERS ==========
+window._showTab = function(tab){
+  document.getElementById('panelLogin').style.display = tab==='login' ? 'flex' : 'none';
+  document.getElementById('panelRegister').style.display = tab==='register' ? 'flex' : 'none';
+  document.getElementById('tabLogin').style.background = tab==='login' ? '#EF9F27' : 'transparent';
+  document.getElementById('tabLogin').style.color = tab==='login' ? '#0A0C10' : '#666';
+  document.getElementById('tabRegister').style.background = tab==='register' ? '#22D47A' : 'transparent';
+  document.getElementById('tabRegister').style.color = tab==='register' ? '#0A0C10' : '#666';
+};
+
+window._fbRegister = async function(){
+  const name = document.getElementById('fbRegName').value.trim();
+  const email = document.getElementById('fbRegEmail').value.trim();
+  const pass = document.getElementById('fbRegPass').value;
+  const err = document.getElementById('fbRegError');
+  if(!name){ err.textContent = 'Escribe tu nombre de usuario'; return; }
+  if(!email){ err.textContent = 'Escribe tu email'; return; }
+  if(pass.length < 6){ err.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
+  err.textContent = 'Creando cuenta...';
+  try{
+    const cred = await createUserWithEmailAndPassword(fbAuth, email, pass);
+    const uid = cred.user.uid;
+    const STARTING_BALANCE = 1000;
+    // save player profile with starting balance
+    await set(ref(fbDb, `players/${uid}`), {
+      name: name,
+      balance: STARTING_BALANCE,
+      lastSeen: Date.now(),
+      joinedAt: Date.now()
+    });
+    // apply balance to local game state immediately
+    if(typeof window.playerAccount !== 'undefined'){
+      window.playerAccount.cashBalance = STARTING_BALANCE;
+    }
+    err.textContent = '';
+    // onAuthStateChanged will handle the rest (hide overlay, show game)
+  } catch(e){
+    const msgs = {
+      'auth/email-already-in-use': 'Ese email ya tiene una cuenta — inicia sesión',
+      'auth/invalid-email': 'Email inválido',
+      'auth/weak-password': 'Contraseña muy débil (mínimo 6 caracteres)',
+    };
+    err.textContent = msgs[e.code] || e.message;
+  }
+};
+
 window._fbLogin = async function(){
   const email = document.getElementById('fbEmail').value.trim();
   const pass = document.getElementById('fbPass').value;
@@ -4841,19 +4894,40 @@ document.getElementById('scannerToggle').addEventListener('click', ()=>{
 renderScannerWidget();
 </script>
 
-<!-- ===== FIREBASE LOGIN OVERLAY ===== -->
+<!-- ===== FIREBASE LOGIN/REGISTER OVERLAY ===== -->
 <div id="fbLoginOverlay" style="position:fixed;inset:0;z-index:99999;background:rgba(10,12,16,.97);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:'Inter',sans-serif">
-  <div style="text-align:center;margin-bottom:8px">
-    <div style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-.5px">Market Sim</div>
-    <div style="font-size:12px;color:#666;margin-top:2px">Inicia sesión para jugar</div>
+  <div style="text-align:center;margin-bottom:4px">
+    <div style="font-size:24px;font-weight:700;color:#fff;letter-spacing:-.5px">📈 Market Sim</div>
+    <div style="font-size:12px;color:#555;margin-top:4px">Simulador de trading en tiempo real</div>
   </div>
-  <div style="background:#141618;border:1px solid #2a2d30;border-radius:12px;padding:24px;width:300px;display:flex;flex-direction:column;gap:12px">
-    <input id="fbEmail" type="email" placeholder="Email" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit">
-    <input id="fbPass" type="password" placeholder="Contraseña" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit">
+
+  <!-- Tabs login / registro -->
+  <div style="display:flex;gap:0;background:#0A0C10;border:1px solid #2a2d30;border-radius:8px;padding:3px;width:300px">
+    <button id="tabLogin" onclick="window._showTab('login')" style="flex:1;padding:7px;border:none;border-radius:6px;background:#EF9F27;color:#0A0C10;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Iniciar sesión</button>
+    <button id="tabRegister" onclick="window._showTab('register')" style="flex:1;padding:7px;border:none;border-radius:6px;background:transparent;color:#666;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Crear cuenta</button>
+  </div>
+
+  <!-- Panel LOGIN -->
+  <div id="panelLogin" style="background:#141618;border:1px solid #2a2d30;border-radius:12px;padding:24px;width:300px;display:flex;flex-direction:column;gap:12px">
+    <input id="fbEmail" type="email" placeholder="Email" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;width:100%">
+    <input id="fbPass" type="password" placeholder="Contraseña" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;width:100%">
     <div id="fbError" style="color:#FF4B4B;font-size:11px;min-height:14px"></div>
-    <button onclick="window._fbLogin()" style="background:#EF9F27;color:#0A0C10;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Entrar</button>
+    <button onclick="window._fbLogin()" style="background:#EF9F27;color:#0A0C10;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Entrar →</button>
   </div>
-  <div style="font-size:10px;color:#444;text-align:center">Contacta al administrador para obtener tus credenciales</div>
+
+  <!-- Panel REGISTRO -->
+  <div id="panelRegister" style="background:#141618;border:1px solid #2a2d30;border-radius:12px;padding:24px;width:300px;display:none;flex-direction:column;gap:12px">
+    <input id="fbRegName" type="text" placeholder="Tu nombre de usuario" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;width:100%">
+    <input id="fbRegEmail" type="email" placeholder="Email" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;width:100%">
+    <input id="fbRegPass" type="password" placeholder="Contraseña (mínimo 6 caracteres)" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;width:100%">
+    <div id="fbRegError" style="color:#FF4B4B;font-size:11px;min-height:14px"></div>
+    <div style="background:#22D47A15;border:1px solid #22D47A30;border-radius:6px;padding:8px 10px;font-size:11px;color:#22D47A">
+      🎁 Recibes <strong>$1,000</strong> de balance al registrarte
+    </div>
+    <button onclick="window._fbRegister()" style="background:#22D47A;color:#0A0C10;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Crear cuenta →</button>
+  </div>
+
+  <div style="font-size:10px;color:#333;text-align:center">El juego es completamente gratuito</div>
 </div>
 
 <!-- ===== USER BAR (top right cuando está logueado) ===== -->
