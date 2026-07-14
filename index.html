@@ -658,7 +658,6 @@ Syntax highlighting has been disabled due to code size.
 
 <!-- Firebase SDKs -->
 <script type="module">
-try {
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -903,7 +902,6 @@ window._setMeAsAdmin = async function(){
   alert('Eres admin ahora. Recarga la página.');
 };
 
-} catch(e) { console.warn("Firebase unavailable (file:// mode):", e.message); }
 </script>
 
 <script id="universe-data" type="application/json">
@@ -5849,6 +5847,24 @@ function renderTradingAcademy(body){
   }
 })();
 
+</script>
+
+<script>
+// Fallback in case Firebase module fails to load
+if(!window._fbLogin){
+  window._fbLogin = async function(){
+    const email = document.getElementById('fbEmail').value.trim();
+    const pass = document.getElementById('fbPass').value;
+    const err = document.getElementById('fbError');
+    if(err) err.textContent = 'Error: Firebase no disponible. Abre el juego desde GitHub Pages (https://).';
+  };
+}
+if(!window._fbRegister){
+  window._fbRegister = async function(){
+    const err = document.getElementById('fbRegError');
+    if(err) err.textContent = 'Error: Firebase no disponible. Abre el juego desde GitHub Pages (https://).';
+  };
+}
 </script>
 </body>
 </html>
