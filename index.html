@@ -657,12 +657,11 @@ Syntax highlighting has been disabled due to code size.
 </div>
 
 <!-- Firebase SDKs -->
-<script type="module">
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, set, get, onValue, update, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
+<!-- Firebase via CDN compat (no ES modules needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script>
 const firebaseConfig = {
   apiKey: "AIzaSyB1zScfL30PoCxXio0EN7oCk0YLaoBOhPo",
   authDomain: "stock-market-sim-e7d8e.firebaseapp.com",
@@ -670,69 +669,40 @@ const firebaseConfig = {
   projectId: "stock-market-sim-e7d8e",
   storageBucket: "stock-market-sim-e7d8e.firebasestorage.app",
   messagingSenderId: "128643077004",
-  appId: "1:128643077004:web:bb173d52481ba2a4463ca9",
-  measurementId: "G-F5T39KLX28"
+  appId: "1:128643077004:web:bb173d52481ba2a4463ca9"
 };
 
-const fbApp = initializeApp(firebaseConfig);
-const fbAuth = getAuth(fbApp);
-const fbDb = getDatabase(fbApp);
+const fbApp = firebase.initializeApp(firebaseConfig);
+const fbAuth = firebase.auth();
+const fbDb = firebase.database();
 
-// ========== GLOBALS EXPOSED TO THE GAME ==========
-window._fbAuth = fbAuth;
-window._fbDb = fbDb;
-window._fbRef = ref;
-window._fbSet = set;
-window._fbGet = get;
-window._fbOnValue = onValue;
-window._fbUpdate = update;
-window._fbPush = push;
-window._fbSignOut = signOut;
 window._currentUser = null;
 window._isAdmin = false;
 window._playerName = '';
 
-// ========== AUTH STATE ==========
-onAuthStateChanged(fbAuth, async (user) => {
+fbAuth.onAuthStateChanged(async (user) => {
   if(user){
     window._currentUser = user;
-    // check if admin
-    const adminSnap = await get(ref(fbDb, `admins/${user.uid}`));
+    const adminSnap = await fbDb.ref('admins/'+user.uid).once('value');
     window._isAdmin = adminSnap.exists();
-    // load full player profile from Firebase
-    const profileSnap = await get(ref(fbDb, `players/${user.uid}`));
+    const profileSnap = await fbDb.ref('players/'+user.uid).once('value');
     if(profileSnap.exists()){
       const profile = profileSnap.val();
       window._playerName = profile.name || user.email.split('@')[0];
-      // Always load balance from Firebase (source of truth — admin can change it)
       if(typeof window.playerAccount !== 'undefined' && profile.balance !== undefined){
         window.playerAccount.cashBalance = profile.balance;
       }
     } else {
-      // New player with no profile yet (edge case) — create one with $1,000
       window._playerName = user.email.split('@')[0];
-      const startBal = 1000;
-      await set(ref(fbDb, `players/${user.uid}`), { name: window._playerName, balance: startBal, lastSeen: Date.now(), joinedAt: Date.now() });
-      if(typeof window.playerAccount !== 'undefined') window.playerAccount.cashBalance = startBal;
+      await fbDb.ref('players/'+user.uid).set({ name: window._playerName, balance: 1000, lastSeen: Date.now(), joinedAt: Date.now() });
+      if(typeof window.playerAccount !== 'undefined') window.playerAccount.cashBalance = 1000;
     }
     document.getElementById('fbLoginOverlay').style.display = 'none';
     document.getElementById('fbUserBar').style.display = 'flex';
     document.getElementById('fbUserName').textContent = window._playerName + (window._isAdmin ? ' 👑' : '');
-    // Hide Sandbox tab from non-admin players — they cannot adjust their own balance
     const sandboxTab = document.getElementById('tabSandbox');
-    if(sandboxTab){
-      if(window._isAdmin){
-        sandboxTab.style.display = ''; // admin sees it
-      } else {
-        sandboxTab.style.display = 'none'; // players never see it
-        // if somehow they're on sandbox section, redirect to trading
-        if(typeof currentSection !== 'undefined' && currentSection === 'sandbox'){
-          if(typeof switchSection === 'function') switchSection('trading');
-        }
-      }
-    }
-    if(window._isAdmin) showAdminPanel();
-    // sync market prices FROM Firebase every 2s
+    if(sandboxTab) sandboxTab.style.display = window._isAdmin ? '' : 'none';
+    if(window._isAdmin && typeof showAdminPanel === 'function') showAdminPanel();
     startMarketSync();
   } else {
     window._currentUser = null;
@@ -742,104 +712,16 @@ onAuthStateChanged(fbAuth, async (user) => {
   }
 });
 
-// ========== MARKET SYNC ==========
-// Host (admin) pushes prices TO Firebase every 3s
-// All players read FROM Firebase every 3s
-let _marketSyncInterval = null;
-function startMarketSync(){
-  if(_marketSyncInterval) clearInterval(_marketSyncInterval);
-  _marketSyncInterval = setInterval(()=>{
-    if(!window._currentUser) return;
-    if(window._isAdmin){
-      // Admin pushes current market state
-      if(typeof window.allStocks !== 'undefined'){
-        const prices = {};
-        window.allStocks.forEach(s=>{ prices[s.sym] = { price: s.price, dayHigh: s._dayHigh||s.price, dayLow: s._dayLow||s.price }; });
-        set(ref(fbDb, 'market/prices'), prices).catch(()=>{});
-      }
-    } else {
-      // Players read market state
-      get(ref(fbDb, 'market/prices')).then(snap=>{
-        if(!snap.exists() || typeof window.allStocks === 'undefined') return;
-        const prices = snap.val();
-        window.allStocks.forEach(s=>{
-          if(prices[s.sym]){
-            s.price = prices[s.sym].price;
-            if(prices[s.sym].dayHigh) s._dayHigh = prices[s.sym].dayHigh;
-            if(prices[s.sym].dayLow) s._dayLow = prices[s.sym].dayLow;
-          }
-        });
-      }).catch(()=>{});
-    }
-    // All players sync their OWN balance to Firebase
-    if(typeof window.playerAccount !== 'undefined'){
-      const uid = window._currentUser.uid;
-      update(ref(fbDb, `players/${uid}`), {
-        balance: window.playerAccount.cashBalance,
-        name: window._playerName,
-        lastSeen: Date.now()
-      }).catch(()=>{});
-    }
-  }, 3000);
-}
-
-// ========== ADMIN PANEL ==========
-function showAdminPanel(){
-  const panel = document.getElementById('fbAdminPanel');
-  if(!panel) return;
-  panel.style.display = 'block';
-  // listen to all players in real time
-  onValue(ref(fbDb, 'players'), snap=>{
-    if(!snap.exists()) return;
-    const players = snap.val();
-    let html = '<table style="width:100%;border-collapse:collapse;font-family:monospace;font-size:11px">';
-    html += '<tr style="color:#EF9F27;border-bottom:1px solid #333"><td style="padding:4px 8px">NOMBRE</td><td>BALANCE</td><td>ÚLTIMA CONEXIÓN</td><td>ACCIÓN</td></tr>';
-    Object.entries(players).forEach(([uid, p])=>{
-      const last = p.lastSeen ? new Date(p.lastSeen).toLocaleTimeString() : '—';
-      html += `<tr style="border-bottom:1px solid #222">
-        <td style="padding:4px 8px">${p.name||uid.slice(0,8)}</td>
-        <td style="color:#22D47A">$${(p.balance||0).toLocaleString()}</td>
-        <td style="color:#666">${last}</td>
-        <td><button onclick="window._adminSetBalance('${uid}','${p.name||''}',${p.balance||0})" style="background:#EF9F27;color:#000;border:none;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px">Editar $</button></td>
-      </tr>`;
-    });
-    html += '</table>';
-    document.getElementById('fbAdminPlayerList').innerHTML = html;
-  });
-}
-window._adminSetBalance = function(uid, name, currentBal){
-  const newBal = prompt(`Nuevo balance para ${name||uid.slice(0,8)}:`, currentBal);
-  if(newBal === null) return;
-  const parsed = parseFloat(newBal);
-  if(isNaN(parsed)){ alert('Número inválido'); return; }
-  set(ref(fbDb, `players/${uid}/balance`), parsed)
-    .then(()=>alert(`Balance actualizado a $${parsed.toLocaleString()}`))
-    .catch(e=>alert('Error: '+e.message));
-};
-window._adminAddPlayer = async function(){
-  const email = prompt('Email del nuevo jugador:');
-  if(!email) return;
-  const pass = prompt('Contraseña temporal:');
-  if(!pass) return;
-  const bal = parseFloat(prompt('Balance inicial:', '25000'));
-  if(isNaN(bal)) return;
-  try{
-    const cred = await createUserWithEmailAndPassword(fbAuth, email, pass);
-    const uid = cred.user.uid;
-    await set(ref(fbDb, `players/${uid}`), { name: email.split('@')[0], balance: bal, lastSeen: Date.now() });
-    // sign back in as admin
-    alert(`Jugador ${email} creado con $${bal.toLocaleString()}. Ahora el jugador puede entrar con esas credenciales.`);
-  } catch(e){ alert('Error: '+e.message); }
-};
-
-// ========== LOGIN/REGISTER FORM HANDLERS ==========
-window._showTab = function(tab){
-  document.getElementById('panelLogin').style.display = tab==='login' ? 'flex' : 'none';
-  document.getElementById('panelRegister').style.display = tab==='register' ? 'flex' : 'none';
-  document.getElementById('tabLogin').style.background = tab==='login' ? '#EF9F27' : 'transparent';
-  document.getElementById('tabLogin').style.color = tab==='login' ? '#0A0C10' : '#666';
-  document.getElementById('tabRegister').style.background = tab==='register' ? '#22D47A' : 'transparent';
-  document.getElementById('tabRegister').style.color = tab==='register' ? '#0A0C10' : '#666';
+window._fbLogin = async function(){
+  const email = document.getElementById('fbEmail').value.trim();
+  const pass = document.getElementById('fbPass').value;
+  const err = document.getElementById('fbError');
+  try {
+    await fbAuth.signInWithEmailAndPassword(email, pass);
+    if(err) err.textContent = '';
+  } catch(e) {
+    if(err) err.textContent = e.code === 'auth/invalid-credential' ? 'Email o contraseña incorrectos' : e.message;
+  }
 };
 
 window._fbRegister = async function(){
@@ -847,61 +729,93 @@ window._fbRegister = async function(){
   const email = document.getElementById('fbRegEmail').value.trim();
   const pass = document.getElementById('fbRegPass').value;
   const err = document.getElementById('fbRegError');
-  if(!name){ err.textContent = 'Escribe tu nombre de usuario'; return; }
-  if(!email){ err.textContent = 'Escribe tu email'; return; }
-  if(pass.length < 6){ err.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
-  err.textContent = 'Creando cuenta...';
-  try{
-    const cred = await createUserWithEmailAndPassword(fbAuth, email, pass);
-    const uid = cred.user.uid;
-    const STARTING_BALANCE = 1000;
-    // save player profile with starting balance
-    await set(ref(fbDb, `players/${uid}`), {
-      name: name,
-      balance: STARTING_BALANCE,
-      lastSeen: Date.now(),
-      joinedAt: Date.now()
-    });
-    // apply balance to local game state immediately
-    if(typeof window.playerAccount !== 'undefined'){
-      window.playerAccount.cashBalance = STARTING_BALANCE;
-    }
-    err.textContent = '';
-    // onAuthStateChanged will handle the rest (hide overlay, show game)
-  } catch(e){
-    const msgs = {
-      'auth/email-already-in-use': 'Ese email ya tiene una cuenta — inicia sesión',
-      'auth/invalid-email': 'Email inválido',
-      'auth/weak-password': 'Contraseña muy débil (mínimo 6 caracteres)',
-    };
-    err.textContent = msgs[e.code] || e.message;
+  if(!name){ if(err) err.textContent = 'Escribe tu nombre'; return; }
+  if(pass.length < 6){ if(err) err.textContent = 'Mínimo 6 caracteres'; return; }
+  if(err) err.textContent = 'Creando cuenta...';
+  try {
+    const cred = await fbAuth.createUserWithEmailAndPassword(email, pass);
+    await fbDb.ref('players/'+cred.user.uid).set({ name, balance: 1000, lastSeen: Date.now(), joinedAt: Date.now() });
+    if(err) err.textContent = '';
+  } catch(e) {
+    const msgs = { 'auth/email-already-in-use': 'Email ya registrado', 'auth/weak-password': 'Contraseña muy débil' };
+    if(err) err.textContent = msgs[e.code] || e.message;
   }
 };
 
-window._fbLogin = async function(){
-  const email = document.getElementById('fbEmail').value.trim();
-  const pass = document.getElementById('fbPass').value;
-  const err = document.getElementById('fbError');
-  try{
-    await signInWithEmailAndPassword(fbAuth, email, pass);
-    err.textContent = '';
-  } catch(e){
-    err.textContent = e.code === 'auth/invalid-credential' ? 'Email o contraseña incorrectos' : e.message;
-  }
-};
 window._fbLogout = async function(){
-  if(_marketSyncInterval) clearInterval(_marketSyncInterval);
-  await signOut(fbAuth);
+  await fbAuth.signOut();
 };
 
-// ========== SET FIRST ADMIN ==========
-// Run once to set yourself as admin — call window._setMeAsAdmin() from browser console
 window._setMeAsAdmin = async function(){
   if(!window._currentUser){ alert('Inicia sesión primero'); return; }
-  await set(ref(fbDb, `admins/${window._currentUser.uid}`), true);
+  await fbDb.ref('admins/'+window._currentUser.uid).set(true);
   alert('Eres admin ahora. Recarga la página.');
 };
 
+window._adminSetBalance = function(uid, name, currentBal){
+  const newBal = prompt('Nuevo balance para '+name+':', currentBal);
+  if(newBal === null) return;
+  const parsed = parseFloat(newBal);
+  if(isNaN(parsed)){ alert('Número inválido'); return; }
+  fbDb.ref('players/'+uid+'/balance').set(parsed)
+    .then(()=>alert('Balance actualizado a $'+parsed.toLocaleString()))
+    .catch(e=>alert('Error: '+e.message));
+};
+
+window._adminAddPlayer = async function(){
+  const email = prompt('Email del nuevo jugador:');
+  if(!email) return;
+  const pass = prompt('Contraseña temporal:');
+  if(!pass) return;
+  const bal = parseFloat(prompt('Balance inicial:', '1000'));
+  if(isNaN(bal)) return;
+  try {
+    const cred = await fbAuth.createUserWithEmailAndPassword(email, pass);
+    await fbDb.ref('players/'+cred.user.uid).set({ name: email.split('@')[0], balance: bal, lastSeen: Date.now() });
+    alert('Jugador '+email+' creado con $'+bal.toLocaleString());
+  } catch(e){ alert('Error: '+e.message); }
+};
+
+function showAdminPanel(){
+  const panel = document.getElementById('fbAdminPanel');
+  if(!panel) return;
+  panel.style.display = 'block';
+  fbDb.ref('players').on('value', snap=>{
+    if(!snap.exists()) return;
+    const players = snap.val();
+    let html = '<table style="width:100%;border-collapse:collapse;font-family:monospace;font-size:11px">';
+    html += '<tr style="color:#EF9F27;border-bottom:1px solid #333"><td style="padding:4px 8px">NOMBRE</td><td>BALANCE</td><td>ÚLTIMA CONEXIÓN</td><td>ACCIÓN</td></tr>';
+    Object.entries(players).forEach(([uid, p])=>{
+      const last = p.lastSeen ? new Date(p.lastSeen).toLocaleTimeString() : '—';
+      html += '<tr style="border-bottom:1px solid #222"><td style="padding:4px 8px">'+(p.name||uid.slice(0,8))+'</td><td style="color:#22D47A">$'+(p.balance||0).toLocaleString()+'</td><td style="color:#666">'+last+'</td><td><button onclick="window._adminSetBalance(''+uid+'',''+(p.name||'')+'','+( p.balance||0)+')" style="background:#EF9F27;color:#000;border:none;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px">Editar $</button></td></tr>';
+    });
+    html += '</table>';
+    document.getElementById('fbAdminPlayerList').innerHTML = html;
+  });
+}
+
+function startMarketSync(){
+  setInterval(()=>{
+    if(!window._currentUser) return;
+    if(window._isAdmin && typeof allStocks !== 'undefined'){
+      const prices = {};
+      allStocks.forEach(s=>{ prices[s.sym] = { price: s.price }; });
+      fbDb.ref('market/prices').set(prices).catch(()=>{});
+    }
+    if(typeof playerAccount !== 'undefined'){
+      fbDb.ref('players/'+window._currentUser.uid).update({ balance: playerAccount.cashBalance, lastSeen: Date.now() }).catch(()=>{});
+    }
+  }, 3000);
+}
+
+window._showTab = function(tab){
+  document.getElementById('panelLogin').style.display = tab==='login'?'flex':'none';
+  document.getElementById('panelRegister').style.display = tab==='register'?'flex':'none';
+  document.getElementById('tabLogin').style.background = tab==='login'?'#EF9F27':'transparent';
+  document.getElementById('tabLogin').style.color = tab==='login'?'#0A0C10':'#666';
+  document.getElementById('tabRegister').style.background = tab==='register'?'#22D47A':'transparent';
+  document.getElementById('tabRegister').style.color = tab==='register'?'#0A0C10':'#666';
+};
 </script>
 
 <script id="universe-data" type="application/json">
@@ -5868,33 +5782,3 @@ if(!window._fbRegister){
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
