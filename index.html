@@ -1024,22 +1024,22 @@
   <!-- SURVIVAL HUD -->
   <div class="survival-hud" id="survivalHud">
     <div class="shud-item">
-      <span class="shud-k">Risk Score</span>
+      <span class="shud-k" data-i18n="surv.riskScore">Risk Score</span>
       <div class="risk-bar"><div class="risk-bar-fill" id="riskBarFill" style="width:100%;background:var(--bid)"></div></div>
       <span class="shud-v" id="riskScoreVal" style="color:var(--bid)">100</span>
     </div>
     <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k">Seat Fee</span><span class="shud-v" style="color:var(--ask)" id="seatFeeVal">-$500/día</span></div>
+    <div class="shud-item"><span class="shud-k" data-i18n="surv.seatFee">Seat Fee</span><span class="shud-v" style="color:var(--ask)" id="seatFeeVal">-$500/día</span></div>
     <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k">Drawdown</span><span class="shud-v" id="drawdownVal">0.00%</span></div>
+    <div class="shud-item"><span class="shud-k" data-i18n="surv.drawdown">Drawdown</span><span class="shud-v" id="drawdownVal">0.00%</span></div>
     <div class="shud-sep"></div>
     <div class="shud-item"><span class="shud-k">PDT</span><span class="shud-v pdt-badge ok" id="pdtBadge">OK</span></div>
     <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k">Trades hoy</span><span class="shud-v" id="dayTradesVal">0 / ∞</span></div>
+    <div class="shud-item"><span class="shud-k" data-i18n="surv.commission">Trades hoy</span><span class="shud-v" id="dayTradesVal">0 / ∞</span></div>
     <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k">Commissions</span><span class="shud-v" style="color:var(--ask)" id="commissionsVal">$0</span></div>
+    <div class="shud-item"><span class="shud-k" data-i18n="surv.commission">Commissions</span><span class="shud-v" style="color:var(--ask)" id="commissionsVal">$0</span></div>
     <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k">Días vivo</span><span class="shud-v" style="color:var(--amber)" id="daysAliveVal">0</span></div>
+    <div class="shud-item"><span class="shud-k" data-i18n="surv.daysAlive">Días vivo</span><span class="shud-v" style="color:var(--amber)" id="daysAliveVal">0</span></div>
   </div>
 
   <!-- SURVIVAL ALERT -->
@@ -1047,7 +1047,7 @@
 
   <!-- SUSPENDED OVERLAY -->
   <div class="suspended-overlay" id="suspendedOverlay">
-    <div class="suspended-title">⏸ SUSPENDED</div>
+    <div class="suspended-title">⏸ <span data-i18n="surv.suspended">SUSPENDED</span></div>
     <div class="suspended-sub" id="suspendedReason">Drawdown límite alcanzado</div>
     <div class="suspended-timer" id="suspendedTimer">60:00</div>
     <div style="font-family:var(--mono);font-size:10px;color:#333">Usa este tiempo para revisar tu plan</div>
@@ -1055,7 +1055,7 @@
 
   <!-- ELIMINATED OVERLAY -->
   <div class="eliminated-overlay" id="eliminatedOverlay">
-    <div style="font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--ask);letter-spacing:-2px">ELIMINADO</div>
+    <div style="font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--ask);letter-spacing:-2px" data-i18n="surv.eliminated">ELIMINADO</div>
     <div style="font-family:var(--mono);font-size:14px;color:var(--text-dim)" id="eliminatedReason">Risk Score llegó a 0</div>
     <div style="font-family:var(--mono);font-size:11px;color:#333" id="eliminatedStats"></div>
     <button onclick="location.reload()" style="margin-top:20px;background:var(--ask);border:none;color:#fff;font-family:var(--mono);font-size:13px;font-weight:700;padding:12px 28px;border-radius:4px;cursor:pointer">VOLVER A INTENTAR</button>
@@ -1151,21 +1151,8 @@ onAuthStateChanged(fbAuth, async (user) => {
       if(typeof window.playerAccount !== 'undefined') window.playerAccount.cashBalance = startBal;
     }
     const _ov=document.getElementById('fbLoginOverlay'); if(_ov)_ov.style.display='none';
-    // Check if player needs to choose firm
-    try{
-      const _db=window._fbDb; const _ref=window._fbRef;
-      if(_db&&_ref&&window._currentUser){
-        const {get:_get}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js').catch(()=>({}));
-        // simple check via window._fbDb
-        setTimeout(async()=>{
-          try{
-            const snap=await window._fbGet(window._fbRef(window._fbDb,'players/'+window._currentUser.uid+'/firm'));
-            if(!snap||!snap.val()) showFirmSelector();
-            else { playerFirm=snap.val(); const f=FIRMS[playerFirm]; if(f){ playerAccount.cashBalance=f.capital; SURVIVAL.MAX_DRAWDOWN_PCT=f.drawdownLimit; SURVIVAL.peakBalance=f.capital; } }
-          }catch(e){ showFirmSelector(); }
-        }, 1500);
-      }
-    }catch(e){ setTimeout(showFirmSelector, 2000); }
+    // All players start with same config
+    try{ survivalInit(); }catch(e){}
     const _ub=document.getElementById('fbUserBar'); if(_ub)_ub.style.display='flex';
     const _un=document.getElementById('fbUserName'); if(_un)_un.textContent=(window._playerName||'')+(window._isAdmin?' 👑':'');
     // Hide Sandbox tab from non-admin players — they cannot adjust their own balance
@@ -1719,7 +1706,7 @@ function survivalSuspend(reason, durationMs){
     if(remaining <= 0){
       clearInterval(interval);
       if(overlay) overlay.classList.remove('show');
-      showSurvivalAlert('✅ Suspensión terminada — Puedes operar de nuevo', 'ok');
+      showSurvivalAlert(t('surv.suspended','SUSPENDED')==='SUSPENDED'?'✅ Trading resumed':'✅ Suspensión terminada', 'ok');
     }
   }, 1000);
   // Bloquear trading mientras está suspendido
@@ -3404,37 +3391,196 @@ document.getElementById('tabSandbox').addEventListener('click', ()=>{
    table headers. Coverage can be widened to secondary strings (toasts,
    tooltips) in later passes without touching this architecture.
    =================================================================== */
-let currentLanguage = 'es';
+let currentLanguage = localStorage.getItem('msLang') || 'es';
 const TRANSLATIONS = {
   es: {
+    // Sections & panels
     'section.trading': 'TRADING', 'section.investing': 'INVESTING',
-    'panel.charts': 'Gráficas', 'panel.optionChain': 'Option Chain', 'panel.l2': 'Level 2 — DOM Ladder',
-    'panel.ts': 'Time & Sales', 'panel.activeTrader': 'Active Trader', 'panel.activeOptionTrader': 'Active Trader — Opciones',
-    'panel.sentiment': 'Sector Sentiment', 'panel.watchlist': 'Sectores & Índices', 'panel.account': 'Portfolio',
-    'panel.financials': 'Financial Statements', 'panel.params': 'Parámetros del Instrumento',
-    'panel.optionFlow': 'Option Flow Stream', 'panel.optionStats': 'Option Statistics', 'panel.calendar': 'Calendario P&L', 'panel.helpDocs': 'Trading Academy',
+    'panel.charts': 'Gráficas', 'panel.optionChain': 'Option Chain',
+    'panel.l2': 'Level 2 — DOM', 'panel.ts': 'Time & Sales',
+    'panel.activeTrader': 'Active Trader', 'panel.activeOptionTrader': 'Active Trader — Opciones',
+    'panel.sentiment': 'Sectores', 'panel.watchlist': 'Watchlist',
+    'panel.account': 'Portfolio', 'panel.financials': 'Finanzas',
+    'panel.params': 'Parámetros', 'panel.optionFlow': 'Option Flow',
+    'panel.optionStats': 'Estadísticas', 'panel.calendar': 'Calendario P&L',
+    'panel.helpDocs': 'Academia', 'panel.mmdesk': 'MM Desk',
+    'panel.news': 'Noticias', 'panel.scanner': 'Scanner',
+    // Modes
     'mode.stock': 'Acción', 'mode.index': 'Índice',
-    'btn.addChart': '+ Agregar Gráfica', 'btn.pauseMarket': '⏸ Pausar Mercado', 'btn.resumeMarket': '▶ Reanudar Mercado',
-    'btn.buyAsk': 'BUY ASK', 'btn.buyBid': 'BUY BID', 'btn.buyAll': 'BUY ALL', 'btn.sellAll': 'SELL ALL',
-    'btn.buy': 'BUY', 'btn.sell': 'SELL', 'btn.confirm': 'Confirmar', 'btn.cancel': 'Cancelar', 'btn.columns': '⚙ Columnas',
-    'th.time': 'Hora', 'th.ticker': 'Ticker', 'th.strike': 'Strike', 'th.dte': 'DTE', 'th.type': 'Tipo',
-    'th.size': 'Size', 'th.premium': 'Premium', 'th.total': 'Total', 'th.side': 'Side', 'th.class': 'Clase',
-    'scanner.title': '🛰 Live Scanner', 'scanner.empty': 'Sin alertas todavía. Las órdenes > $100K aparecerán aquí.',
+    // Buttons
+    'btn.addChart': '+ Agregar Gráfica',
+    'btn.pauseMarket': '⏸ Pausar', 'btn.resumeMarket': '▶ Reanudar',
+    'btn.buyAsk': 'COMPRAR ASK', 'btn.buyBid': 'COMPRAR BID',
+    'btn.buyAll': 'COMPRAR TODO', 'btn.sellAll': 'VENDER TODO',
+    'btn.buy': 'COMPRAR', 'btn.sell': 'VENDER',
+    'btn.confirm': 'Confirmar', 'btn.cancel': 'Cancelar',
+    'btn.columns': '⚙ Columnas', 'btn.flatten': 'APLANAR',
+    'btn.reverse': 'INVERTIR', 'btn.cancelAll': 'CANCELAR TODO',
+    'btn.close': 'CERRAR POS',
+    // Table headers
+    'th.time': 'Hora', 'th.ticker': 'Ticker', 'th.strike': 'Strike',
+    'th.dte': 'DTE', 'th.type': 'Tipo', 'th.size': 'Tam.',
+    'th.premium': 'Prima', 'th.total': 'Total', 'th.side': 'Lado',
+    'th.class': 'Clase', 'th.price': 'Precio', 'th.pnl': 'P&L',
+    'th.qty': 'Cant.', 'th.bid': 'Bid', 'th.ask': 'Ask',
+    'th.iv': 'VI', 'th.delta': 'Delta', 'th.gamma': 'Gamma',
+    'th.theta': 'Theta', 'th.vega': 'Vega', 'th.oi': 'Int. Abierto',
+    'th.vol': 'Volumen', 'th.chg': 'Cambio', 'th.sector': 'Sector',
+    // Scanner
+    'scanner.title': '🛰 Scanner en Vivo',
+    'scanner.empty': 'Sin alertas. Las órdenes > $100K aparecerán aquí.',
+    'scan.movers': '🔥 Movers', 'scan.volume': '📊 Volumen',
+    'scan.gainers': '▲ Alzas', 'scan.losers': '▼ Bajas',
+    'scan.ivhigh': '🔮 IV Alta', 'scan.unusual': '🐋 Inusual',
+    'scan.premarket': '🌅 Pre-mkt', 'scan.shortpop': '🚀 Squeeze',
+    // Active Trader
+    'at.qty': 'Cantidad', 'at.orderType': 'Tipo de orden',
+    'at.limit': 'Límite', 'at.stop': 'Stop', 'at.trail': 'Trailing',
+    'at.position': 'Posición', 'at.avgPrice': 'Precio prom.',
+    'at.unrealized': 'No realizado', 'at.realized': 'Realizado',
+    // Portfolio
+    'port.cash': 'Efectivo', 'port.buyingPower': 'Poder de compra',
+    'port.dayPL': 'P&L del día', 'port.totalPL': 'P&L total',
+    'port.positions': 'Posiciones abiertas', 'port.noPos': 'Sin posiciones abiertas',
+    'port.winRate': 'Tasa de éxito', 'port.trades': 'Operaciones',
+    'port.equity': 'Capital', 'port.margin': 'Margen usado',
+    // Survival
+    'surv.riskScore': 'Risk Score', 'surv.seatFee': 'Cuota diaria',
+    'surv.drawdown': 'Drawdown', 'surv.daysAlive': 'Días vivo',
+    'surv.suspended': 'SUSPENDIDO', 'surv.eliminated': 'ELIMINADO',
+    'surv.commission': 'Comisiones',
+    // News
+    'news.empty': 'Sin noticias recientes.',
+    // MM Desk
+    'mm.activate': '🏦 Activate MM', 'mm.deactivate': '✕ Desactivar MM',
+    'mm.inventory': 'Inventario', 'mm.spread': 'Spread',
+    'mm.pnl': 'P&L MM', 'mm.fills': 'Fills',
+    // Misc toasts / alerts
+    'toast.buyFill': 'Compra ejecutada', 'toast.sellFill': 'Venta ejecutada',
+    'toast.limitPlaced': 'Orden límite colocada',
+    'toast.stopPlaced': 'Stop order colocado',
+    'toast.limitFilled': 'Límite ejecutado',
+    'toast.stopFilled': 'Stop ejecutado',
+    'toast.insufficientCash': 'Efectivo insuficiente',
+    'toast.haltBlocked': 'Acción en HALT — no puedes operar',
+    'toast.marketPaused': 'Mercado pausado',
+    'toast.alertSet': 'Alerta configurada',
+    // Login
+    'login.title': 'Iniciar sesión', 'login.register': 'Registrarse',
+    'login.email': 'Email', 'login.password': 'Contraseña',
+    'login.name': 'Nombre de usuario',
+    'login.forgot': '¿Olvidaste tu contraseña?',
+    'login.send': 'Enviar enlace',
+    'login.emailSent': '✅ Email enviado — revisa tu bandeja.',
+    // Chart indicators
+    'ind.ema9': 'EMA 9', 'ind.ema21': 'EMA 21', 'ind.vwap': 'VWAP',
+    'ind.rsi': 'RSI', 'ind.macd': 'MACD', 'ind.gex': 'GEX',
+    'ind.zoom': 'Zoom', 'ind.alert': 'Alerta',
+    // Timeframes
+    'tf.1m': '1m', 'tf.5m': '5m', 'tf.15m': '15m',
+    'tf.1h': '1H', 'tf.4h': '4H', 'tf.d': 'D',
+    // Option chain
+    'oc.calls': 'CALLS', 'oc.puts': 'PUTS', 'oc.expiry': 'Expiración',
+    'oc.strikes': 'Strikes', 'oc.netFlow': 'Flujo neto',
+    // Help / academy
+    'help.welcome': 'Bienvenido a la Academia de Trading',
+    'help.basics': 'Conceptos básicos', 'help.options': 'Opciones',
+    'help.risk': 'Gestión de riesgo', 'help.survival': 'Modo Supervivencia',
   },
+
   en: {
+    // Sections & panels
     'section.trading': 'TRADING', 'section.investing': 'INVESTING',
-    'panel.charts': 'Charts', 'panel.optionChain': 'Option Chain', 'panel.l2': 'Level 2 — DOM Ladder',
-    'panel.ts': 'Time & Sales', 'panel.activeTrader': 'Active Trader', 'panel.activeOptionTrader': 'Active Trader — Options',
-    'panel.sentiment': 'Sector Sentiment', 'panel.watchlist': 'Sectors & Indices', 'panel.account': 'Account & Balance',
-    'panel.financials': 'Financial Statements', 'panel.params': 'Instrument Parameters',
-    'panel.optionFlow': 'Option Flow Stream', 'panel.optionStats': 'Option Statistics', 'panel.calendar': 'P&L Calendar', 'panel.helpDocs': 'Trading Academy',
+    'panel.charts': 'Charts', 'panel.optionChain': 'Option Chain',
+    'panel.l2': 'Level 2 — DOM', 'panel.ts': 'Time & Sales',
+    'panel.activeTrader': 'Active Trader', 'panel.activeOptionTrader': 'Active Trader — Options',
+    'panel.sentiment': 'Sectors', 'panel.watchlist': 'Watchlist',
+    'panel.account': 'Portfolio', 'panel.financials': 'Financials',
+    'panel.params': 'Parameters', 'panel.optionFlow': 'Option Flow',
+    'panel.optionStats': 'Statistics', 'panel.calendar': 'P&L Calendar',
+    'panel.helpDocs': 'Academy', 'panel.mmdesk': 'MM Desk',
+    'panel.news': 'News', 'panel.scanner': 'Scanner',
+    // Modes
     'mode.stock': 'Stock', 'mode.index': 'Index',
-    'btn.addChart': '+ Add Chart', 'btn.pauseMarket': '⏸ Pause Market', 'btn.resumeMarket': '▶ Resume Market',
-    'btn.buyAsk': 'BUY ASK', 'btn.buyBid': 'BUY BID', 'btn.buyAll': 'BUY ALL', 'btn.sellAll': 'SELL ALL',
-    'btn.buy': 'BUY', 'btn.sell': 'SELL', 'btn.confirm': 'Confirm', 'btn.cancel': 'Cancel', 'btn.columns': '⚙ Columns',
-    'th.time': 'Time', 'th.ticker': 'Ticker', 'th.strike': 'Strike', 'th.dte': 'DTE', 'th.type': 'Type',
-    'th.size': 'Size', 'th.premium': 'Premium', 'th.total': 'Total', 'th.side': 'Side', 'th.class': 'Class',
-    'scanner.title': '🛰 Live Scanner', 'scanner.empty': 'No alerts yet. Orders > $100K will appear here.',
+    // Buttons
+    'btn.addChart': '+ Add Chart',
+    'btn.pauseMarket': '⏸ Pause', 'btn.resumeMarket': '▶ Resume',
+    'btn.buyAsk': 'BUY ASK', 'btn.buyBid': 'BUY BID',
+    'btn.buyAll': 'BUY ALL', 'btn.sellAll': 'SELL ALL',
+    'btn.buy': 'BUY', 'btn.sell': 'SELL',
+    'btn.confirm': 'Confirm', 'btn.cancel': 'Cancel',
+    'btn.columns': '⚙ Columns', 'btn.flatten': 'FLATTEN',
+    'btn.reverse': 'REVERSE', 'btn.cancelAll': 'CANCEL ALL',
+    'btn.close': 'CLOSE POS',
+    // Table headers
+    'th.time': 'Time', 'th.ticker': 'Ticker', 'th.strike': 'Strike',
+    'th.dte': 'DTE', 'th.type': 'Type', 'th.size': 'Size',
+    'th.premium': 'Premium', 'th.total': 'Total', 'th.side': 'Side',
+    'th.class': 'Class', 'th.price': 'Price', 'th.pnl': 'P&L',
+    'th.qty': 'Qty', 'th.bid': 'Bid', 'th.ask': 'Ask',
+    'th.iv': 'IV', 'th.delta': 'Delta', 'th.gamma': 'Gamma',
+    'th.theta': 'Theta', 'th.vega': 'Vega', 'th.oi': 'Open Int.',
+    'th.vol': 'Volume', 'th.chg': 'Change', 'th.sector': 'Sector',
+    // Scanner
+    'scanner.title': '🛰 Live Scanner',
+    'scanner.empty': 'No alerts yet. Orders > $100K will appear here.',
+    'scan.movers': '🔥 Movers', 'scan.volume': '📊 Volume',
+    'scan.gainers': '▲ Gainers', 'scan.losers': '▼ Losers',
+    'scan.ivhigh': '🔮 IV High', 'scan.unusual': '🐋 Unusual',
+    'scan.premarket': '🌅 Pre-mkt', 'scan.shortpop': '🚀 Squeeze',
+    // Active Trader
+    'at.qty': 'Quantity', 'at.orderType': 'Order type',
+    'at.limit': 'Limit', 'at.stop': 'Stop', 'at.trail': 'Trailing',
+    'at.position': 'Position', 'at.avgPrice': 'Avg price',
+    'at.unrealized': 'Unrealized', 'at.realized': 'Realized',
+    // Portfolio
+    'port.cash': 'Cash', 'port.buyingPower': 'Buying power',
+    'port.dayPL': 'Day P&L', 'port.totalPL': 'Total P&L',
+    'port.positions': 'Open positions', 'port.noPos': 'No open positions',
+    'port.winRate': 'Win rate', 'port.trades': 'Trades',
+    'port.equity': 'Equity', 'port.margin': 'Margin used',
+    // Survival
+    'surv.riskScore': 'Risk Score', 'surv.seatFee': 'Daily seat fee',
+    'surv.drawdown': 'Drawdown', 'surv.daysAlive': 'Days alive',
+    'surv.suspended': 'SUSPENDED', 'surv.eliminated': 'ELIMINATED',
+    'surv.commission': 'Commissions',
+    // News
+    'news.empty': 'No recent news.',
+    // MM Desk
+    'mm.activate': '🏦 ACTIVATE MM MODE', 'mm.deactivate': '✕ Deactivate MM',
+    'mm.inventory': 'Inventory', 'mm.spread': 'Spread',
+    'mm.pnl': 'MM P&L', 'mm.fills': 'Fills',
+    // Misc toasts / alerts
+    'toast.buyFill': 'Buy executed', 'toast.sellFill': 'Sell executed',
+    'toast.limitPlaced': 'Limit order placed',
+    'toast.stopPlaced': 'Stop order placed',
+    'toast.limitFilled': 'Limit order filled',
+    'toast.stopFilled': 'Stop order filled',
+    'toast.insufficientCash': 'Insufficient cash',
+    'toast.haltBlocked': 'Stock is HALTED — trading blocked',
+    'toast.marketPaused': 'Market paused',
+    'toast.alertSet': 'Alert set',
+    // Login
+    'login.title': 'Sign in', 'login.register': 'Register',
+    'login.email': 'Email', 'login.password': 'Password',
+    'login.name': 'Username',
+    'login.forgot': 'Forgot your password?',
+    'login.send': 'Send link',
+    'login.emailSent': '✅ Email sent — check your inbox.',
+    // Chart indicators
+    'ind.ema9': 'EMA 9', 'ind.ema21': 'EMA 21', 'ind.vwap': 'VWAP',
+    'ind.rsi': 'RSI', 'ind.macd': 'MACD', 'ind.gex': 'GEX',
+    'ind.zoom': 'Zoom', 'ind.alert': 'Alert',
+    // Timeframes
+    'tf.1m': '1m', 'tf.5m': '5m', 'tf.15m': '15m',
+    'tf.1h': '1H', 'tf.4h': '4H', 'tf.d': 'D',
+    // Option chain
+    'oc.calls': 'CALLS', 'oc.puts': 'PUTS', 'oc.expiry': 'Expiry',
+    'oc.strikes': 'Strikes', 'oc.netFlow': 'Net flow',
+    // Help / academy
+    'help.welcome': 'Welcome to the Trading Academy',
+    'help.basics': 'Basics', 'help.options': 'Options',
+    'help.risk': 'Risk management', 'help.survival': 'Survival mode',
   },
 };
 function t(key, fallback){
@@ -3442,11 +3588,44 @@ function t(key, fallback){
 }
 function setLanguage(lang){
   currentLanguage = lang;
+  localStorage.setItem('msLang', lang);
   buildTopbar();
   buildTray();
   renderLayout();
   renderScannerWidget();
   schedulePersist();
+}
+
+/* ── AUTO i18n — actualiza todos los elementos con data-i18n ── */
+function applyI18n(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const key = el.getAttribute('data-i18n');
+    const translated = t(key);
+    if(translated && translated !== key) el.textContent = translated;
+  });
+  // Update specific dynamic strings
+  // Update placeholders
+  const emailInputs = document.querySelectorAll('input[type="email"]');
+  emailInputs.forEach(el=>{ if(el.placeholder) el.placeholder = t('login.email','Email'); });
+  const passInputs = document.querySelectorAll('input[type="password"]');
+  passInputs.forEach(el=>{ if(el.placeholder) el.placeholder = t('login.password','Password'); });
+  const nameInput = document.getElementById('fbRegName');
+  if(nameInput) nameInput.placeholder = t('login.name','Username');
+  const resetEmailInput = document.getElementById('fbResetEmail');
+  if(resetEmailInput) resetEmailInput.placeholder = t('login.email','Email');
+  const loginTitle = document.querySelector('#loginBox .login-title, #loginTabBtn');
+  const regTitle   = document.querySelector('#registerTabBtn');
+  if(loginTitle) loginTitle.textContent = t('login.title','Iniciar sesión');
+  if(regTitle)   regTitle.textContent   = t('login.register','Registrarse');
+  const forgot = document.getElementById('forgotBtn');
+  if(forgot) forgot.textContent = t('login.forgot','¿Olvidaste tu contraseña?');
+  const resetBtn = document.getElementById('resetBtn');
+  if(resetBtn) resetBtn.textContent = t('login.send','Enviar enlace');
+  // Survival HUD suspend/eliminate overlays
+  const suspTitle = document.querySelector('.suspended-title');
+  if(suspTitle) suspTitle.textContent = t('surv.suspended','SUSPENDED');
+  const elimTitle = document.querySelector('.eliminated-overlay div');
+  // Already hardcoded in HTML, just toggle language on these
 }
 
 function buildTopbar(){
@@ -4000,9 +4179,9 @@ function renderSandboxSection(){
         <div class="sandbox-card-body">
           <div class="sandbox-current-val">Cash actual: <b style="color:#fff;">${fmtMoney(playerAccount.cashBalance)}</b></div>
           <div class="sandbox-field-row">
-            <label>Ajustar Cash ($)</label>
+            <label>${t('port.cash','Cash')} ($)</label>
             <input type="number" id="sandboxCashInput" value="${playerAccount.cashBalance.toFixed(2)}" step="100">
-            <button id="sandboxCashApplyBtn">Aplicar</button>
+            <button id="sandboxCashApplyBtn">${t('btn.confirm','Apply')}</button>
           </div>
           <div class="sandbox-current-val">P&amp;L Realizado actual: <b style="color:${playerAccount.dayPLRealized>=0?'var(--bid)':'var(--ask)'};">${fmtMoney(playerAccount.dayPLRealized)}</b></div>
           <div class="sandbox-field-row">
@@ -4225,12 +4404,12 @@ function buildPanelBodies(){
           <div class="chart-stats-row" id="chartStats-${ci.id}"></div>
           <div class="chart-indicator-bar" id="indBar-${ci.id}">
             <span style="font-size:8px;color:var(--text-dim);margin-right:2px">IND:</span>
-            <button class="ind-btn on" onclick="chartIndicators.ema9=!chartIndicators.ema9;this.classList.toggle('on');renderAllData()">EMA 9</button>
-            <button class="ind-btn on" onclick="chartIndicators.ema21=!chartIndicators.ema21;this.classList.toggle('on');renderAllData()">EMA 21</button>
-            <button class="ind-btn on" onclick="chartIndicators.vwap=!chartIndicators.vwap;this.classList.toggle('on');renderAllData()">VWAP</button>
-            <button class="ind-btn" onclick="chartIndicators.rsi=!chartIndicators.rsi;this.classList.toggle('on');renderAllData()">RSI</button>
-            <button class="ind-btn" onclick="chartIndicators.macd=!chartIndicators.macd;this.classList.toggle('on');renderAllData()">MACD</button>
-            <button class="ind-btn" onclick="chartIndicators.gex=!chartIndicators.gex;this.classList.toggle('on');renderAllData()">GEX</button>
+            <button class="ind-btn on" onclick="chartIndicators.ema9=!chartIndicators.ema9;this.classList.toggle('on');renderAllData()">${t('ind.ema9','EMA 9')}</button>
+            <button class="ind-btn on" onclick="chartIndicators.ema21=!chartIndicators.ema21;this.classList.toggle('on');renderAllData()">${t('ind.ema21','EMA 21')}</button>
+            <button class="ind-btn on" onclick="chartIndicators.vwap=!chartIndicators.vwap;this.classList.toggle('on');renderAllData()">${t('ind.vwap','VWAP')}</button>
+            <button class="ind-btn" onclick="chartIndicators.rsi=!chartIndicators.rsi;this.classList.toggle('on');renderAllData()">${t('ind.rsi','RSI')}</button>
+            <button class="ind-btn" onclick="chartIndicators.macd=!chartIndicators.macd;this.classList.toggle('on');renderAllData()">${t('ind.macd','MACD')}</button>
+            <button class="ind-btn" onclick="chartIndicators.gex=!chartIndicators.gex;this.classList.toggle('on');renderAllData()">${t('ind.gex','GEX')}</button>
             <span style="margin-left:auto;display:flex;gap:4px;align-items:center">
               <span style="font-size:8px;color:var(--text-dim)">Zoom:</span>
               <button class="ind-btn" id="zoomIn-${ci.id}" onclick="chartZoomIn('${ci.id}')">+</button>
@@ -4338,7 +4517,7 @@ function buildPanelBodies(){
       <div class="dom-rows" id="l2Rows"></div>
       <div class="dom-footer" id="l2Footer"></div>`;
     if(vis.ts) document.getElementById('body-ts').innerHTML = `
-      <div class="ts-cols-header" style="display:grid;grid-template-columns:46px 46px 68px 46px 42px 48px;padding:5px 8px;font-size:7.5px;color:var(--text-dim);text-transform:uppercase;border-bottom:1px solid var(--border);font-family:var(--mono)"><span>Hora</span><span>Bid</span><span>Precio</span><span>Ask</span><span style="text-align:right">Sz</span><span style="text-align:right">Exch</span></div>
+      <div class="ts-cols-header" style="display:grid;grid-template-columns:46px 46px 68px 46px 42px 48px;padding:5px 8px;font-size:7.5px;color:var(--text-dim);text-transform:uppercase;border-bottom:1px solid var(--border);font-family:var(--mono)"><span>${t('th.time','Hora')}</span><span>${t('th.bid','Bid')}</span><span>${t('th.price','Precio')}</span><span>${t('th.ask','Ask')}</span><span style="text-align:right">${t('th.size','Sz')}</span><span style="text-align:right">Exch</span></div>
       <div class="ts-rows" id="tsRows"></div>`;
     if(vis.optionChain){
       const body = document.getElementById('body-optionChain');
@@ -4862,13 +5041,13 @@ function renderActiveTrader(displayPrice, displayVol){
         <div class="at-bb-side-label bid-c">COMPRAR</div>
         <div class="at-bb-side-price bid-c">${askPrice.toFixed(2)}</div>
         <div class="at-bb-side-sub">al ASK · spread ${spread}</div>
-        <button class="at-bb-btn at-bb-btn-buy" id="atBuyBtn">Comprar</button>
+        <button class="at-bb-btn at-bb-btn-buy" id="atBuyBtn">${t('btn.buy','BUY')}</button>
       </div>
       <div class="at-bb-side at-bb-sell">
         <div class="at-bb-side-label ask-c">VENDER</div>
         <div class="at-bb-side-price ask-c">${bidPrice.toFixed(2)}</div>
         <div class="at-bb-side-sub">al BID · spread ${spread}</div>
-        <button class="at-bb-btn at-bb-btn-sell" id="atSellBtn">Vender</button>
+        <button class="at-bb-btn at-bb-btn-sell" id="atSellBtn">${t('btn.sell','SELL')}</button>
       </div>
     </div>
 
@@ -4980,7 +5159,7 @@ function renderActiveTrader(displayPrice, displayVol){
    prominent alert than the normal toast, pointing the player to the Sandbox to top up if needed. */
 function flashInsufficientCashAlert(cost){
   const shortfall = cost - playerAccount.cashBalance;
-  flashToast(`⚠ Cash insuficiente. Necesitas ${fmtMoney(cost)}, tienes ${fmtMoney(playerAccount.cashBalance)} (faltan ${fmtMoney(shortfall)}). Ve a 🛠️ Sandbox para agregar más dinero.`, true);
+  flashToast(`⚠ ${t('toast.insufficientCash','Insufficient cash')}. Need ${fmtMoney(cost)}, have ${fmtMoney(playerAccount.cashBalance)} (short ${fmtMoney(shortfall)}).`, true);
 }
 /* ===================================================================
    STOCK TAPE — persistent Time & Sales for stocks, connected to real
@@ -5140,7 +5319,7 @@ let _alertId = 1;
 
 function addPriceAlert(sym, condition, targetPrice){
   priceAlerts.push({ id:_alertId++, sym, condition, price:targetPrice, triggered:false });
-  flashToast('🔔 Alerta: '+sym+' '+condition+' $'+targetPrice.toFixed(2));
+  flashToast(`🔔 ${t('toast.alertSet','Alert')}: ${sym} ${condition} $${targetPrice.toFixed(2)}`);
   renderPriceAlertsUI();
 }
 
@@ -5560,9 +5739,9 @@ function renderAccountPanel(){
   const unrealizedPL = computeAccountPL();
   const totalEquity = playerAccount.cashBalance + unrealizedPL;
   acctGrid.innerHTML = `
-    <div class="acct-stat"><div class="lbl">Cash</div><div class="val">$${playerAccount.cashBalance.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
-    <div class="acct-stat"><div class="lbl">Equity Total</div><div class="val">$${totalEquity.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
-    <div class="acct-stat"><div class="lbl">P&amp;L No Realizado</div><div class="val ${unrealizedPL>=0?'pos':'neg'}">${unrealizedPL>=0?'+':''}$${unrealizedPL.toFixed(0)}</div></div>
+    <div class="acct-stat"><div class="lbl">${t('port.cash','Cash')}</div><div class="val">$${playerAccount.cashBalance.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+    <div class="acct-stat"><div class="lbl">${t('port.equity','Total Equity')}</div><div class="val">$${totalEquity.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+    <div class="acct-stat"><div class="lbl">${t('at.unrealized','Unrealized P&L')}</div><div class="val ${unrealizedPL>=0?'pos':'neg'}">${unrealizedPL>=0?'+':''}$${unrealizedPL.toFixed(0)}</div></div>
     <div class="acct-stat"><div class="lbl">P&amp;L Realizado</div><div class="val ${playerAccount.dayPLRealized>=0?'pos':'neg'}">${playerAccount.dayPLRealized>=0?'+':''}$${playerAccount.dayPLRealized.toFixed(0)}</div></div>`;
 
   const stockRows = Object.entries(playerAccount.stockPositions).filter(([,p])=>p.qty!==0).map(([sym,pos])=>{
@@ -6507,6 +6686,7 @@ buildTopbar();
 buildTray();
 renderLayout();
 try{sbActivate('chart');}catch(e){}
+try{applyI18n();}catch(e){}
 try{ survivalInit(); survivalChargeDailyFees(); }catch(e){ console.warn('Survival init',e); }
 startLiveEngine();
 setInterval(persistGameState, 15000); // periodic backup save, independent of the debounced one tied to specific actions
@@ -6530,7 +6710,7 @@ renderScannerWidget();
     <input id="fbPass" type="password" placeholder="Contraseña" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">
     <div id="fbError" style="color:#FF4B4B;font-size:11px;min-height:14px;text-align:center"></div>
     <button id="loginBtn" style="background:#EF9F27;color:#0A0C10;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Entrar</button>
-    <button id="forgotBtn" style="background:none;border:none;color:#444;font-size:11px;cursor:pointer;text-decoration:underline">Olvidaste tu contraseña?</button>
+    <button id="forgotBtn" style="background:none;border:none;color:#444;font-size:11px;cursor:pointer;text-decoration:underline" data-i18n="login.forgot">Olvidaste tu contraseña?</button>
   </div>
   <div id="registerBox" style="background:#141618;border:1px solid #2a2d30;border-radius:12px;padding:20px;width:290px;display:none;flex-direction:column;gap:10px">
     <input id="fbRegName" type="text" placeholder="Nombre de usuario" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">
@@ -6543,7 +6723,7 @@ renderScannerWidget();
     <div style="font-size:12px;color:#fff;font-weight:600">Recuperar contrasena</div>
     <input id="fbResetEmail" type="email" placeholder="Email" style="background:#0A0C10;border:1px solid #2a2d30;border-radius:6px;padding:10px 12px;color:#fff;font-size:13px;outline:none;width:100%;box-sizing:border-box">
     <div id="fbResetMsg" style="font-size:11px;min-height:14px;text-align:center;color:#22D47A"></div>
-    <button id="resetBtn" style="background:#EF9F27;color:#0A0C10;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Enviar enlace</button>
+    <button id="resetBtn" style="background:#EF9F27;color:#0A0C10;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer" data-i18n="login.send">Enviar enlace</button>
     <button id="backBtn" style="background:none;border:none;color:#444;font-size:11px;cursor:pointer;text-decoration:underline">Volver</button>
   </div>
   <div style="font-size:10px;color:#2a2a2a">El juego es completamente gratuito</div>
@@ -7499,14 +7679,14 @@ function renderScannerPanel(){
     });
 
     const filterHtml = `<div class="scan-filter-row" style="flex-wrap:wrap;gap:4px">
-      <button class="scan-filter-btn${_scannerFilter==='movers'?' active':''}"    onclick="_scannerFilter='movers';renderScannerPanel()">🔥 Movers</button>
-      <button class="scan-filter-btn${_scannerFilter==='volume'?' active':''}"    onclick="_scannerFilter='volume';renderScannerPanel()">📊 Volume</button>
-      <button class="scan-filter-btn${_scannerFilter==='gainers'?' active':''}"   onclick="_scannerFilter='gainers';renderScannerPanel()">▲ Gainers</button>
-      <button class="scan-filter-btn${_scannerFilter==='losers'?' active':''}"    onclick="_scannerFilter='losers';renderScannerPanel()">▼ Losers</button>
-      <button class="scan-filter-btn${_scannerFilter==='ivhigh'?' active':''}"    onclick="_scannerFilter='ivhigh';renderScannerPanel()">🔮 IV High</button>
-      <button class="scan-filter-btn${_scannerFilter==='unusual'?' active':''}"   onclick="_scannerFilter='unusual';renderScannerPanel()">🐋 Unusual</button>
-      <button class="scan-filter-btn${_scannerFilter==='premarket'?' active':''}" onclick="_scannerFilter='premarket';renderScannerPanel()">🌅 Pre-mkt</button>
-      <button class="scan-filter-btn${_scannerFilter==='shortpop'?' active':''}"  onclick="_scannerFilter='shortpop';renderScannerPanel()">🚀 Squeeze</button>
+      <button class="scan-filter-btn${_scannerFilter==='movers'?' active':''}"    onclick="_scannerFilter='movers';renderScannerPanel()">${t('scan.movers','🔥 Movers')}</button>
+      <button class="scan-filter-btn${_scannerFilter==='volume'?' active':''}"    onclick="_scannerFilter='volume';renderScannerPanel()">${t('scan.volume','📊 Volume')}</button>
+      <button class="scan-filter-btn${_scannerFilter==='gainers'?' active':''}"   onclick="_scannerFilter='gainers';renderScannerPanel()">${t('scan.gainers','▲ Gainers')}</button>
+      <button class="scan-filter-btn${_scannerFilter==='losers'?' active':''}"    onclick="_scannerFilter='losers';renderScannerPanel()">${t('scan.losers','▼ Losers')}</button>
+      <button class="scan-filter-btn${_scannerFilter==='ivhigh'?' active':''}"    onclick="_scannerFilter='ivhigh';renderScannerPanel()">${t('scan.ivhigh','🔮 IV High')}</button>
+      <button class="scan-filter-btn${_scannerFilter==='unusual'?' active':''}"   onclick="_scannerFilter='unusual';renderScannerPanel()">${t('scan.unusual','🐋 Unusual')}</button>
+      <button class="scan-filter-btn${_scannerFilter==='premarket'?' active':''}" onclick="_scannerFilter='premarket';renderScannerPanel()">${t('scan.premarket','🌅 Pre-mkt')}</button>
+      <button class="scan-filter-btn${_scannerFilter==='shortpop'?' active':''}"  onclick="_scannerFilter='shortpop';renderScannerPanel()">${t('scan.shortpop','🚀 Squeeze')}</button>
     </div>`;
 
     // Unusual options activity — stocks con vol/OI ratio alto
@@ -8845,77 +9025,20 @@ function isStockHalted(sym){ return !!haltedStocks[sym]; }
 const _origFillStock = fillStockOrder;
 window.fillStockOrder = function(side, price, forceQty){
   if(isStockHalted(currentSym)){
-    showSurvivalAlert(`⛔ ${currentSym} está en HALT — no puedes operar`, 'danger');
-    flashToast(`Trading bloqueado — ${currentSym} en halt`, true);
+    showSurvivalAlert(`⛔ ${currentSym}: ${t('toast.haltBlocked','HALTED — trading blocked')}`, 'danger');
+    flashToast(`⛔ ${currentSym} ${t('toast.haltBlocked','HALTED')}`, true);
     return;
   }
   _origFillStock(side, price, forceQty);
 };
 fillStockOrder = window.fillStockOrder;
 
-/* ── 10. FIRMS / ROLES ───────────────────────────────────────────────
-   El jugador elige su rol al hacer login por primera vez.
-   Cada rol tiene restricciones y ventajas distintas.
-   ─────────────────────────────────────────────────────────────────── */
-const FIRMS = {
-  retail:    { name:'Retail Trader',    capital:10000,  pdtActive:true,  maxRisk:0.10, leverage:1,   drawdownLimit:10, label:'🧑 Retail',    color:'#448AFF', desc:'PDT activo. Capital limitado. Sin ventajas especiales. El modo difícil real.' },
-  prop:      { name:'Prop Trader',      capital:50000,  pdtActive:false, maxRisk:0.02, leverage:5,   drawdownLimit:5,  label:'⚡ Prop',       color:'#FFD600', desc:'Sin PDT. Riesgo máximo 2% por trade. Leverage 5x. Si violas el risk: eliminado.' },
-  hedgefund: { name:'Hedge Fund',       capital:500000, pdtActive:false, maxRisk:0.05, leverage:2,   drawdownLimit:8,  label:'🏛️ HF',         color:'#E040FB', desc:'Capital grande pero drawdown 8% = liquidación instantánea. Ve dark pool.' },
-  mm:        { name:'Market Maker',     capital:200000, pdtActive:false, maxRisk:0.15, leverage:10,  drawdownLimit:12, label:'🏦 MM',         color:'#00E676', desc:'Debe cotizar bid/ask siempre. Gana el spread. Puede tomar posiciones grandes.' },
-  hft:       { name:'HFT Firm',         capital:25000,  pdtActive:false, maxRisk:0.05, leverage:3,   drawdownLimit:3,  label:'⚡⚡ HFT',      color:'#FF4081', desc:'Solo puede tradear 0DTE opciones. Fills instantáneos. Drawdown 3% = fuera.' },
-};
+// Firms removed — all players start equal
+let playerFirm = 'trader'; // everyone is just a trader
 
-let playerFirm = null; // se setea al elegir rol
-
-function showFirmSelector(){
-  const existing = document.getElementById('firmSelectorOverlay');
-  if(existing) return;
-  const overlay = document.createElement('div');
-  overlay.id = 'firmSelectorOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:99998;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;font-family:var(--mono)';
-  overlay.innerHTML = `
-    <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:#fff;letter-spacing:-2px">ELIGE TU FIRMA</div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:-12px;letter-spacing:.5px">Esta decisión define tus reglas para siempre en este servidor</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:800px;width:90%">
-      ${Object.entries(FIRMS).map(([key,f])=>`
-        <div onclick="selectFirm('${key}')" style="background:#0A0A0A;border:1px solid #1E1E1E;border-radius:6px;padding:16px;cursor:pointer;transition:all .15s" 
-          onmouseover="this.style.borderColor='${f.color}';this.style.background='rgba(0,0,0,.8)'"
-          onmouseout="this.style.borderColor='#1E1E1E';this.style.background='#0A0A0A'">
-          <div style="font-size:18px;margin-bottom:6px">${f.label}</div>
-          <div style="font-size:13px;font-weight:700;color:${f.color};margin-bottom:6px">${f.name}</div>
-          <div style="font-size:9px;color:var(--text-dim);line-height:1.6;margin-bottom:10px">${f.desc}</div>
-          <div style="display:flex;flex-direction:column;gap:3px;font-size:9px">
-            <div style="display:flex;justify-content:space-between"><span style="color:#333">Capital</span><span style="color:#fff">$${(f.capital/1000).toFixed(0)}K</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:#333">Drawdown límite</span><span style="color:var(--ask)">${f.drawdownLimit}%</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:#333">PDT</span><span style="color:${f.pdtActive?'var(--ask)':'var(--bid)'}">${f.pdtActive?'ACTIVO':'NO'}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:#333">Leverage</span><span style="color:var(--amber)">${f.leverage}x</span></div>
-          </div>
-        </div>`).join('')}
-    </div>`;
-  document.body.appendChild(overlay);
-}
-
-window.selectFirm = function(key){
-  const firm = FIRMS[key];
-  if(!firm) return;
-  playerFirm = key;
-  // Aplicar capital y restricciones
-  playerAccount.cashBalance = firm.capital;
-  SURVIVAL.MAX_DRAWDOWN_PCT = firm.drawdownLimit;
-  SURVIVAL.peakBalance = firm.capital;
-  SURVIVAL.dayStartBalance = firm.capital;
-  // Guardar en Firebase
-  try{
-    const _db=window._fbDb; const _ref=window._fbRef; const _set=window._fbSet;
-    if(_db&&_ref&&_set&&playerAccount.uid)
-      _set(_ref(_db,'players/'+playerAccount.uid+'/firm'), key);
-  }catch(e){}
-  document.getElementById('firmSelectorOverlay')?.remove();
-  showSurvivalAlert('✅ Firma elegida: '+firm.name+' — ¡Buena suerte!', 'ok');
-  survivalInit();
-  renderAllData();
-  flashToast('Bienvenido a '+firm.name+' — Capital: $'+firm.capital.toLocaleString());
-};
+// Firm selector removed
+function showFirmSelector(){ /* no-op */ }
+window.selectFirm = function(key){ /* no-op */ };
 
 </script>
 </body>
