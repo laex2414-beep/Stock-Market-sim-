@@ -21,7 +21,7 @@
   .market-pulse{ height:5px; width:100%; background:var(--panel); position:relative; overflow:hidden; }
   .market-pulse-fill{ position:absolute; top:0; bottom:0; left:50%; width:38%; background:linear-gradient(90deg, transparent, var(--bid)); }
 
-  .app-shell{ display:flex; height:calc(100vh - 5px); }
+  .app-shell{ display:flex; height:calc(100vh - 5px); margin-top:28px; }
 
   /* ===== SIDEBAR (Trading / Investing switcher) ===== */
   .sidebar{
@@ -693,7 +693,9 @@
   .sb-divider{width:28px;height:1px;background:var(--border);margin:4px 0;}
   .sidebar{width:56px!important;} .sidebar .brand-mark{font-size:14px!important;}
   .sidebar-tab{display:none!important;} .panel-tray{display:none!important;} .section-title{display:none!important;}
-  .portfolio-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden;}
+  .portfolio-wrap{display:flex;flex-direction:column;min-height:700px;overflow:hidden;}
+  #body-account{ min-height:700px; }
+  #panel-account{ min-height:700px; }
   .port-equity-header{display:flex;justify-content:space-between;padding:12px 14px 10px;background:var(--panel-elevated);border-bottom:1px solid var(--border);}
   .port-equity-label{font-size:8.5px;color:var(--text-dim);text-transform:uppercase;margin-bottom:3px;}
   .port-equity-val{font-family:var(--mono);font-size:16px;font-weight:700;}
@@ -890,6 +892,56 @@
   .ind-btn{ font-size:9px; font-family:var(--mono); padding:2px 8px; border-radius:3px; border:1px solid var(--border); background:transparent; color:var(--text-dim); cursor:pointer; transition:all .15s; }
   .ind-btn.on{ background:rgba(255,214,0,.1); border-color:var(--amber); color:var(--amber); }
   .ind-btn:hover{ border-color:var(--text-dim); color:var(--text); }
+  /* ── SURVIVAL MODE ── */
+  .survival-hud{ position:fixed; top:0; left:56px; right:0; height:28px; background:#0A0000; border-bottom:1px solid #2a0a0a; display:flex; align-items:center; padding:0 14px; gap:16px; z-index:800; font-family:var(--mono); font-size:9.5px; transition:top .3s; }
+  .survival-hud.hidden{ top:-30px; }
+  .shud-item{ display:flex; gap:5px; align-items:center; }
+  .shud-k{ color:#3a1a1a; text-transform:uppercase; letter-spacing:.4px; font-size:8px; }
+  .shud-v{ font-weight:700; }
+  .shud-sep{ width:1px; height:14px; background:#1a0808; }
+  .risk-bar{ width:80px; height:6px; background:#1a0808; border-radius:3px; overflow:hidden; }
+  .risk-bar-fill{ height:100%; border-radius:3px; transition:width .4s, background .4s; }
+  .survival-alert{ position:fixed; top:32px; left:50%; transform:translateX(-50%); z-index:9000; background:#1a0000; border:1px solid var(--ask); border-radius:6px; padding:10px 20px; font-family:var(--mono); font-size:12px; font-weight:700; color:var(--ask); text-align:center; display:none; min-width:300px; }
+  .survival-alert.show{ display:block; animation:salert .3s ease; }
+  @keyframes salert{ from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)} }
+  .pdt-badge{ background:rgba(255,23,68,.15); border:1px solid var(--ask); color:var(--ask); font-size:8px; padding:1px 6px; border-radius:3px; font-weight:700; }
+  .pdt-badge.ok{ background:rgba(0,230,118,.1); border-color:var(--bid); color:var(--bid); }
+  .suspended-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:9999; display:none; align-items:center; justify-content:center; flex-direction:column; gap:16px; }
+  .suspended-overlay.show{ display:flex; }
+  .suspended-title{ font-family:'Syne',sans-serif; font-size:32px; font-weight:800; color:var(--ask); letter-spacing:-1px; }
+  .suspended-sub{ font-family:var(--mono); font-size:13px; color:var(--text-dim); }
+  .suspended-timer{ font-family:var(--mono); font-size:48px; font-weight:800; color:#fff; }
+  .eliminated-overlay{ position:fixed; inset:0; background:#000; z-index:99999; display:none; align-items:center; justify-content:center; flex-direction:column; gap:20px; }
+  .eliminated-overlay.show{ display:flex; }
+
+
+  /* ── GEX + HEATMAP ── */
+  .gex-panel{ border-top:1px solid var(--border); background:var(--panel); padding:0; }
+  .gex-header{ padding:5px 10px; font-size:8px; color:var(--text-dim); font-family:var(--mono); text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center; }
+  .gex-bars{ display:flex; align-items:flex-end; gap:1px; height:80px; padding:4px 10px 0; overflow-x:auto; }
+  .gex-bar-wrap{ display:flex; flex-direction:column; align-items:center; gap:1px; flex-shrink:0; }
+  .gex-bar{ width:14px; border-radius:1px 1px 0 0; min-height:2px; transition:height .3s; cursor:pointer; }
+  .gex-bar.positive{ background:rgba(0,230,118,.5); }
+  .gex-bar.negative{ background:rgba(255,23,68,.5); border-radius:0 0 1px 1px; }
+  .gex-strike-label{ font-family:var(--mono); font-size:7px; color:var(--text-dim); white-space:nowrap; transform:rotate(-45deg); transform-origin:top left; margin-top:2px; }
+  .gex-atm{ border:1px solid var(--amber) !important; }
+  .heatmap-panel{ border-top:1px solid var(--border); background:#000; }
+  .heatmap-row{ display:flex; height:18px; }
+  .heatmap-cell{ flex:1; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:7px; color:rgba(255,255,255,.6); cursor:pointer; transition:filter .15s; }
+  .heatmap-cell:hover{ filter:brightness(1.4); }
+  /* ── DRAGGABLE RESIZABLE PANELS ── */
+  .panel{ position:relative; }
+  .panel-resize-handle{
+    position:absolute; bottom:0; right:0; width:14px; height:14px;
+    cursor:se-resize; z-index:10;
+    background:linear-gradient(135deg, transparent 50%, var(--border) 50%);
+    border-radius:0 0 6px 0;
+  }
+  .panel-resize-handle:hover{ background:linear-gradient(135deg, transparent 50%, var(--amber) 50%); }
+  .panel.dragging-panel{ opacity:.6; outline:1.5px dashed var(--amber); cursor:grabbing; }
+  .panel.drag-over-panel{ outline:1.5px dashed var(--blue); }
+  .panel-header{ cursor:grab; }
+  .panel-header:active{ cursor:grabbing; }
   /* ── LEADERBOARD ── */
   .lb-panel{ padding:0; }
   .lb-header-row{ display:grid; grid-template-columns:24px 1fr 70px 60px 50px; padding:5px 12px; font-size:8px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border); font-family:var(--mono); }
@@ -901,6 +953,12 @@
   .lb-name{ font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .lb-pnl.pos{ color:var(--bid); font-weight:700; }
   .lb-pnl.neg{ color:var(--ask); }
+  /* ── PRICE ALERTS ── */
+  .alert-row{ display:flex; gap:6px; align-items:center; padding:5px 12px; border-bottom:.5px solid var(--border); font-family:var(--mono); font-size:10px; }
+  .alert-badge{ font-size:7.5px; padding:2px 5px; border-radius:3px; font-weight:700; }
+  .alert-above{ background:rgba(0,230,118,.15); color:var(--bid); }
+  .alert-below{ background:rgba(255,23,68,.15); color:var(--ask); }
+  .alert-triggered{ background:rgba(232,163,61,.15); color:var(--amber); }
   /* ── STOP ORDERS ── */
   .stop-order-section{ border-top:1px solid var(--border); padding:10px 12px; }
   .stop-row{ display:grid; grid-template-columns:54px 1fr 70px; gap:4px; margin-bottom:5px; align-items:center; }
@@ -963,6 +1021,46 @@
     <div class="sb-item" id="sb-mmdesk" onclick="sbActivate('mmdesk')" title="MM Desk"><span class="sb-icon">🏦</span><span class="sb-lbl">MM</span></div>
   </div>
 
+  <!-- SURVIVAL HUD -->
+  <div class="survival-hud" id="survivalHud">
+    <div class="shud-item">
+      <span class="shud-k">Risk Score</span>
+      <div class="risk-bar"><div class="risk-bar-fill" id="riskBarFill" style="width:100%;background:var(--bid)"></div></div>
+      <span class="shud-v" id="riskScoreVal" style="color:var(--bid)">100</span>
+    </div>
+    <div class="shud-sep"></div>
+    <div class="shud-item"><span class="shud-k">Seat Fee</span><span class="shud-v" style="color:var(--ask)" id="seatFeeVal">-$500/día</span></div>
+    <div class="shud-sep"></div>
+    <div class="shud-item"><span class="shud-k">Drawdown</span><span class="shud-v" id="drawdownVal">0.00%</span></div>
+    <div class="shud-sep"></div>
+    <div class="shud-item"><span class="shud-k">PDT</span><span class="shud-v pdt-badge ok" id="pdtBadge">OK</span></div>
+    <div class="shud-sep"></div>
+    <div class="shud-item"><span class="shud-k">Trades hoy</span><span class="shud-v" id="dayTradesVal">0 / ∞</span></div>
+    <div class="shud-sep"></div>
+    <div class="shud-item"><span class="shud-k">Commissions</span><span class="shud-v" style="color:var(--ask)" id="commissionsVal">$0</span></div>
+    <div class="shud-sep"></div>
+    <div class="shud-item"><span class="shud-k">Días vivo</span><span class="shud-v" style="color:var(--amber)" id="daysAliveVal">0</span></div>
+  </div>
+
+  <!-- SURVIVAL ALERT -->
+  <div class="survival-alert" id="survivalAlert"></div>
+
+  <!-- SUSPENDED OVERLAY -->
+  <div class="suspended-overlay" id="suspendedOverlay">
+    <div class="suspended-title">⏸ SUSPENDED</div>
+    <div class="suspended-sub" id="suspendedReason">Drawdown límite alcanzado</div>
+    <div class="suspended-timer" id="suspendedTimer">60:00</div>
+    <div style="font-family:var(--mono);font-size:10px;color:#333">Usa este tiempo para revisar tu plan</div>
+  </div>
+
+  <!-- ELIMINATED OVERLAY -->
+  <div class="eliminated-overlay" id="eliminatedOverlay">
+    <div style="font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--ask);letter-spacing:-2px">ELIMINADO</div>
+    <div style="font-family:var(--mono);font-size:14px;color:var(--text-dim)" id="eliminatedReason">Risk Score llegó a 0</div>
+    <div style="font-family:var(--mono);font-size:11px;color:#333" id="eliminatedStats"></div>
+    <button onclick="location.reload()" style="margin-top:20px;background:var(--ask);border:none;color:#fff;font-family:var(--mono);font-size:13px;font-weight:700;padding:12px 28px;border-radius:4px;cursor:pointer">VOLVER A INTENTAR</button>
+  </div>
+
   <div class="main-area">
     <div class="topbar" id="topbar"></div>
     <div id="fbUserBar" style="display:none;position:fixed;top:0;right:0;z-index:1000;height:44px;padding:0 16px;display:none;align-items:center;gap:12px;background:var(--panel);border-bottom:1px solid var(--border);border-left:1px solid var(--border)">
@@ -1023,6 +1121,7 @@ window._fbGet = get;
 window._fbOnValue = onValue;
 window._fbUpdate = update;
 window._fbPush = push;
+window._fbGet  = get;
 window._fbSignOut = signOut;
 window._currentUser = null;
 window._isAdmin = false;
@@ -1052,6 +1151,21 @@ onAuthStateChanged(fbAuth, async (user) => {
       if(typeof window.playerAccount !== 'undefined') window.playerAccount.cashBalance = startBal;
     }
     const _ov=document.getElementById('fbLoginOverlay'); if(_ov)_ov.style.display='none';
+    // Check if player needs to choose firm
+    try{
+      const _db=window._fbDb; const _ref=window._fbRef;
+      if(_db&&_ref&&window._currentUser){
+        const {get:_get}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js').catch(()=>({}));
+        // simple check via window._fbDb
+        setTimeout(async()=>{
+          try{
+            const snap=await window._fbGet(window._fbRef(window._fbDb,'players/'+window._currentUser.uid+'/firm'));
+            if(!snap||!snap.val()) showFirmSelector();
+            else { playerFirm=snap.val(); const f=FIRMS[playerFirm]; if(f){ playerAccount.cashBalance=f.capital; SURVIVAL.MAX_DRAWDOWN_PCT=f.drawdownLimit; SURVIVAL.peakBalance=f.capital; } }
+          }catch(e){ showFirmSelector(); }
+        }, 1500);
+      }
+    }catch(e){ setTimeout(showFirmSelector, 2000); }
     const _ub=document.getElementById('fbUserBar'); if(_ub)_ub.style.display='flex';
     const _un=document.getElementById('fbUserName'); if(_un)_un.textContent=(window._playerName||'')+(window._isAdmin?' 👑':'');
     // Hide Sandbox tab from non-admin players — they cannot adjust their own balance
@@ -1231,6 +1345,18 @@ window._fbRegister = async function(){
   }
 };
 
+window._fbReset = async function(){
+  const email = (document.getElementById('fbResetEmail')||{}).value||'';
+  const msg = document.getElementById('fbResetMsg');
+  if(!email){ if(msg) msg.textContent='Ingresa tu email.'; return; }
+  try{
+    const {sendPasswordResetEmail} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    await sendPasswordResetEmail(fbAuth, email);
+    if(msg){ msg.style.color='#22D47A'; msg.textContent='✅ Email enviado — revisa tu bandeja.'; }
+  } catch(e){
+    if(msg){ msg.style.color='var(--ask)'; msg.textContent='Error: '+e.message; }
+  }
+};
 window._fbLogin = async function(){
   const email = document.getElementById('fbEmail').value.trim();
   const pass = document.getElementById('fbPass').value;
@@ -1433,7 +1559,312 @@ function decayOptionInterestAtDayClose(){
     // any other major expiry on a non-Friday day: left fully untouched (robust through the week)
   });
 }
+
+/* ===================================================================
+   SURVIVAL MODE ENGINE
+   - Seat fee diaria ($500/día)
+   - Data feed ($150/día)  
+   - Commissions reales ($0.65/contrato opciones, $0.005/acción)
+   - PDT Rule (< $25K → max 3 day trades/semana)
+   - Drawdown limit (5% → suspensión 1h)
+   - Risk Score (0-100, llega a 0 = eliminado)
+   =================================================================== */
+
+const SURVIVAL = {
+  enabled: true,
+  // Costos fijos
+  SEAT_FEE_PER_DAY:   500,
+  DATA_FEED_PER_DAY:  150,
+  COMMISSION_STOCK:   0.005,   // por acción
+  COMMISSION_OPTION:  0.65,    // por contrato
+  // PDT
+  PDT_THRESHOLD:      25000,
+  PDT_MAX_DAY_TRADES: 3,
+  // Drawdown
+  MAX_DRAWDOWN_PCT:   5,       // % del capital máximo del día
+  SUSPEND_MINUTES:    60,
+  // Risk Score
+  riskScore:          100,
+  // Estado
+  dayTradeCount:      0,       // day trades hoy
+  weekDayTrades:      0,       // day trades esta semana
+  totalCommissions:   0,
+  peakBalance:        0,       // para calcular drawdown
+  dayStartBalance:    0,
+  suspendedUntil:     0,
+  daysAlive:          0,
+  dayFeesCharged:     false,   // solo cobrar fees 1 vez por día
+  openedToday:        {},      // sym -> precio de apertura (para detectar day trades)
+};
+
+function survivalInit(){
+  SURVIVAL.peakBalance    = playerAccount.cashBalance;
+  SURVIVAL.dayStartBalance= playerAccount.cashBalance;
+  SURVIVAL.riskScore      = 100;
+  SURVIVAL.daysAlive      = 0;
+  updateSurvivalHUD();
+}
+
+/* Cobrar fees al inicio de cada día de trading */
+function survivalChargeDailyFees(){
+  if(SURVIVAL.dayFeesCharged) return;
+  SURVIVAL.dayFeesCharged = true;
+  const totalFee = SURVIVAL.SEAT_FEE_PER_DAY + SURVIVAL.DATA_FEED_PER_DAY;
+  playerAccount.cashBalance -= totalFee;
+  playerAccount.dayPLRealized -= totalFee;
+  SURVIVAL.totalCommissions += totalFee;
+  showSurvivalAlert(`📋 Seat fee: -$${SURVIVAL.SEAT_FEE_PER_DAY} · Data feed: -$${SURVIVAL.DATA_FEED_PER_DAY}`, 'warn');
+  checkSurvivalStatus();
+  updateSurvivalHUD();
+  schedulePersist();
+}
+
+/* Cobrar comisión por trade */
+function survivalChargeCommission(type, qty, contracts){
+  if(!SURVIVAL.enabled) return 0;
+  let fee = 0;
+  if(type === 'stock')  fee = qty * SURVIVAL.COMMISSION_STOCK;
+  if(type === 'option') fee = (contracts||1) * SURVIVAL.COMMISSION_OPTION;
+  fee = +fee.toFixed(2);
+  if(fee > 0){
+    playerAccount.cashBalance -= fee;
+    playerAccount.dayPLRealized -= fee;
+    SURVIVAL.totalCommissions += fee;
+  }
+  return fee;
+}
+
+/* Registrar un day trade — detecta si abriste y cerraste la misma posición hoy */
+function survivalRegisterTrade(sym, side, qty){
+  if(!SURVIVAL.enabled) return;
+  SURVIVAL.dayTradeCount++;
+  SURVIVAL.weekDayTrades++;
+  // PDT check
+  if(playerAccount.cashBalance < SURVIVAL.PDT_THRESHOLD){
+    if(SURVIVAL.weekDayTrades > SURVIVAL.PDT_MAX_DAY_TRADES){
+      showSurvivalAlert('🚫 PDT VIOLATION — Cuenta congelada 24h. Menos de $25K en cuenta.', 'danger');
+      survivalSuspend('PDT Rule violada (< $25K, más de 3 day trades/semana)', 60 * 60 * 1000);
+      survivalDamageRiskScore(20, 'PDT Violation');
+    }
+  }
+  updateSurvivalHUD();
+}
+
+/* Calcular drawdown actual */
+function survivalGetDrawdown(){
+  const peak = Math.max(SURVIVAL.peakBalance, SURVIVAL.dayStartBalance);
+  if(peak <= 0) return 0;
+  return ((peak - playerAccount.cashBalance) / peak) * 100;
+}
+
+/* Verificar salud del jugador después de cada trade */
+function checkSurvivalStatus(){
+  if(!SURVIVAL.enabled) return;
+  // Actualizar peak
+  if(playerAccount.cashBalance > SURVIVAL.peakBalance)
+    SURVIVAL.peakBalance = playerAccount.cashBalance;
+
+  const drawdown = survivalGetDrawdown();
+  
+  // Drawdown limit
+  if(drawdown >= SURVIVAL.MAX_DRAWDOWN_PCT && SURVIVAL.suspendedUntil < Date.now()){
+    showSurvivalAlert(`⚠️ DRAWDOWN LÍMITE ${drawdown.toFixed(1)}% — Suspendido 1 hora`, 'danger');
+    survivalSuspend(`Drawdown de ${drawdown.toFixed(1)}% alcanzado (límite: ${SURVIVAL.MAX_DRAWDOWN_PCT}%)`, SURVIVAL.SUSPEND_MINUTES * 60 * 1000);
+    survivalDamageRiskScore(15, 'Drawdown limit');
+  }
+
+  // Margin call (balance < 20% del pico)
+  const marginPct = (playerAccount.cashBalance / SURVIVAL.peakBalance) * 100;
+  if(marginPct < 20 && playerAccount.cashBalance > 0){
+    showSurvivalAlert('🔴 MARGIN CALL — Deposita fondos o serás liquidado', 'danger');
+    survivalDamageRiskScore(10, 'Margin call');
+  }
+
+  // Eliminado (cash < $100 o riskScore <= 0)
+  if(playerAccount.cashBalance < 100 || SURVIVAL.riskScore <= 0){
+    survivalEliminate(playerAccount.cashBalance < 100 ? 'Cuenta en $0 — sin capital para operar' : 'Risk Score llegó a 0');
+  }
+
+  updateSurvivalHUD();
+}
+
+/* Reducir Risk Score */
+function survivalDamageRiskScore(points, reason){
+  SURVIVAL.riskScore = Math.max(0, SURVIVAL.riskScore - points);
+  showSurvivalAlert(`📉 Risk Score -${points} (${reason}) → ${SURVIVAL.riskScore}`, 'warn');
+  if(SURVIVAL.riskScore <= 0) survivalEliminate('Risk Score llegó a 0');
+  updateSurvivalHUD();
+}
+
+/* Reward: trade positivo mejora Risk Score levemente */
+function survivalRewardRiskScore(points){
+  SURVIVAL.riskScore = Math.min(100, SURVIVAL.riskScore + points);
+  updateSurvivalHUD();
+}
+
+/* Suspensión temporal */
+function survivalSuspend(reason, durationMs){
+  SURVIVAL.suspendedUntil = Date.now() + durationMs;
+  const overlay = document.getElementById('suspendedOverlay');
+  const reasonEl = document.getElementById('suspendedReason');
+  if(overlay) overlay.classList.add('show');
+  if(reasonEl) reasonEl.textContent = reason;
+  // Timer countdown
+  const timerEl = document.getElementById('suspendedTimer');
+  const interval = setInterval(()=>{
+    const remaining = Math.max(0, SURVIVAL.suspendedUntil - Date.now());
+    const mins = Math.floor(remaining/60000);
+    const secs = Math.floor((remaining%60000)/1000);
+    if(timerEl) timerEl.textContent = `${mins}:${secs.toString().padStart(2,'0')}`;
+    if(remaining <= 0){
+      clearInterval(interval);
+      if(overlay) overlay.classList.remove('show');
+      showSurvivalAlert('✅ Suspensión terminada — Puedes operar de nuevo', 'ok');
+    }
+  }, 1000);
+  // Bloquear trading mientras está suspendido
+  liveEnginePaused = true;
+  setTimeout(()=>{ liveEnginePaused = false; }, durationMs);
+}
+
+/* Eliminación */
+function survivalEliminate(reason){
+  liveEnginePaused = true;
+  try{playSound('eliminate');}catch(e){}
+  const overlay = document.getElementById('eliminatedOverlay');
+  const reasonEl = document.getElementById('eliminatedReason');
+  const statsEl  = document.getElementById('eliminatedStats');
+  if(overlay) overlay.classList.add('show');
+  if(reasonEl) reasonEl.textContent = reason;
+  if(statsEl) statsEl.textContent = 
+    `Días vivo: ${SURVIVAL.daysAlive} · Comisiones pagadas: $${SURVIVAL.totalCommissions.toFixed(0)} · Risk Score final: ${SURVIVAL.riskScore}`;
+}
+
+/* Mostrar alerta en el HUD */
+function showSurvivalAlert(msg, type='warn'){
+  const el = document.getElementById('survivalAlert');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.background = type==='danger'?'#1a0000':type==='ok'?'#001a08':'#1a1000';
+  el.style.borderColor = type==='danger'?'var(--ask)':type==='ok'?'var(--bid)':'var(--amber)';
+  el.style.color = type==='danger'?'var(--ask)':type==='ok'?'var(--bid)':'var(--amber)';
+  el.classList.add('show');
+  setTimeout(()=> el.classList.remove('show'), 4000);
+}
+
+/* Actualizar el HUD de survival */
+function updateSurvivalHUD(){
+  const score = SURVIVAL.riskScore;
+  const fill = document.getElementById('riskBarFill');
+  const scoreVal = document.getElementById('riskScoreVal');
+  const drawVal = document.getElementById('drawdownVal');
+  const pdtBadge = document.getElementById('pdtBadge');
+  const dayTrades = document.getElementById('dayTradesVal');
+  const commissions = document.getElementById('commissionsVal');
+  const daysAlive = document.getElementById('daysAliveVal');
+  const riskColor = score>60?'var(--bid)':score>30?'var(--amber)':'var(--ask)';
+  if(fill){ fill.style.width=score+'%'; fill.style.background=riskColor; }
+  if(scoreVal){ scoreVal.textContent=score; scoreVal.style.color=riskColor; }
+  const dd = survivalGetDrawdown();
+  if(drawVal){ 
+    drawVal.textContent=dd.toFixed(2)+'%'; 
+    drawVal.style.color=dd>3?'var(--ask)':dd>1?'var(--amber)':'var(--text-dim)';
+  }
+  const isPDTRestricted = playerAccount.cashBalance < SURVIVAL.PDT_THRESHOLD;
+  if(pdtBadge){
+    pdtBadge.textContent = isPDTRestricted ? `${SURVIVAL.weekDayTrades}/${SURVIVAL.PDT_MAX_DAY_TRADES}` : 'OK';
+    pdtBadge.className = 'shud-v pdt-badge' + (isPDTRestricted ? (SURVIVAL.weekDayTrades>=SURVIVAL.PDT_MAX_DAY_TRADES?' ':' ok') : ' ok');
+  }
+  if(dayTrades) dayTrades.textContent = `${SURVIVAL.dayTradeCount} hoy`;
+  if(commissions) commissions.textContent = '-$'+SURVIVAL.totalCommissions.toFixed(0);
+  if(daysAlive) daysAlive.textContent = SURVIVAL.daysAlive;
+}
+
+/* Hook en closeTradingDay */
+function survivalOnDayClose(){
+  // Cobrar fees del día siguiente
+  SURVIVAL.dayFeesCharged = false;
+  SURVIVAL.dayTradeCount = 0;
+  // Resetear week si es lunes (día 0 de la semana)
+  if(gameCalendar.dayIndex === 0) SURVIVAL.weekDayTrades = 0;
+  // Día positivo = +2 risk score
+  const dayPL = playerAccount.cashBalance - SURVIVAL.dayStartBalance;
+  if(dayPL > 0) survivalRewardRiskScore(2);
+  else if(dayPL < -SURVIVAL.dayStartBalance * 0.02) survivalDamageRiskScore(5, 'Día con -2% o más');
+  SURVIVAL.daysAlive++;
+  SURVIVAL.dayStartBalance = playerAccount.cashBalance;
+  survivalChargeDailyFees();
+  updateSurvivalHUD();
+}
+
+/* ===================================================================
+   SOUND ENGINE — Web Audio API, sin archivos externos
+   =================================================================== */
+let _audioCtx = null;
+function getAudioCtx(){
+  if(!_audioCtx) _audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  return _audioCtx;
+}
+
+function playTone(freq, type, duration, volume=0.15, fadeOut=true){
+  try{
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    if(fadeOut) gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  }catch(e){}
+}
+
+function playSound(type){
+  switch(type){
+    case 'buy':    // soft ascending ping
+      playTone(523, 'sine', 0.12, 0.12);
+      setTimeout(()=>playTone(659, 'sine', 0.10, 0.08), 60);
+      break;
+    case 'sell':   // descending
+      playTone(494, 'sine', 0.12, 0.12);
+      setTimeout(()=>playTone(392, 'sine', 0.10, 0.08), 60);
+      break;
+    case 'fill':   // short tick
+      playTone(880, 'square', 0.06, 0.04);
+      break;
+    case 'alert':  // attention ping
+      playTone(1047, 'sine', 0.20, 0.15);
+      setTimeout(()=>playTone(1047, 'sine', 0.15, 0.10), 220);
+      break;
+    case 'sweep':  // rapid sweep sound
+      playTone(220, 'sawtooth', 0.08, 0.08);
+      setTimeout(()=>playTone(330, 'sawtooth', 0.07, 0.07), 40);
+      setTimeout(()=>playTone(440, 'sawtooth', 0.06, 0.06), 80);
+      break;
+    case 'halt':   // warning buzz
+      playTone(150, 'square', 0.40, 0.18);
+      break;
+    case 'blackswan': // low ominous drone
+      playTone(80, 'sawtooth', 0.80, 0.20, false);
+      setTimeout(()=>{ try{_audioCtx&&_audioCtx.close();_audioCtx=null;}catch(e){} }, 900);
+      break;
+    case 'eliminate': // game over
+      [0,150,300,450].forEach((d,i)=>setTimeout(()=>playTone(200-i*30,'square',0.3,0.15),d));
+      break;
+  }
+}
+
+// Auto-unmute on first user interaction
+document.addEventListener('click', ()=>{ try{getAudioCtx().resume();}catch(e){} }, {once:true});
+
 function closeTradingDay(){
+  // Guardar P&L del día en el historial
+  if(!window.playerDayHistory) window.playerDayHistory = [];
+  const dayPnl = playerAccount.cashBalance - (SURVIVAL.dayStartBalance || playerAccount.cashBalance);
+  window.playerDayHistory[gameCalendar.totalDaysElapsed] = { pnl: dayPnl, trades: SURVIVAL.dayTradeCount, day: gameCalendar.totalDaysElapsed };
+  survivalOnDayClose();
   settleExpiringPositions();
   resetDailyVolumeAcrossChain();
   decayOptionInterestAtDayClose();
@@ -1618,7 +2049,8 @@ function tickStockEngine(stock){
   const noise = ((Math.random()-0.5) + stock._brownianWalk) * tfRegime.noiseMult;
   updateStockRegime(stock);
   const regimeBias = regimeForceBias(stock);
-  const targetForcePct = magnetForce*FORCE_WEIGHTS.magnet + flowForce*FORCE_WEIGHTS.flow + noise*FORCE_WEIGHTS.noise*0.01 + regimeBias*0.012;
+  const _extBias = stock._externalForceBias || 0;
+  const targetForcePct = magnetForce*FORCE_WEIGHTS.magnet + flowForce*FORCE_WEIGHTS.flow + noise*FORCE_WEIGHTS.noise*0.01 + regimeBias*0.012 + _extBias;
   stock._smoothedForce += (targetForcePct - stock._smoothedForce) * tfRegime.smoothingAlpha;
   const deltaPct = stock._smoothedForce * (VOL_PARAMS[stock.volatility].spreadPct*40); // tie tick size to the same per-stock volatility tier used everywhere else
   const delta = stock.price * deltaPct;
@@ -1661,10 +2093,10 @@ function toggleLiveEngine(){
 
 
 const VOL_PARAMS = {
-  low:     { minSize: 800,  maxSize: 2000, spreadPct: 0.00015, levels: 9, label:'BAJA VOL' },
-  med:     { minSize: 300,  maxSize: 900,  spreadPct: 0.0004,  levels: 9, label:'MEDIA VOL' },
-  high:    { minSize: 100,  maxSize: 400,  spreadPct: 0.0009,  levels: 8, label:'ALTA VOL' },
-  extreme: { minSize: 20,   maxSize: 150,  spreadPct: 0.002,   levels: 6, label:'EXTREMA VOL' },
+  low:     { minSize: 3000, maxSize: 12000, spreadPct: 0.00015, levels: 12, label:'BAJA VOL' },
+  med:     { minSize: 1200, maxSize: 5000,  spreadPct: 0.0004,  levels: 12, label:'MEDIA VOL' },
+  high:    { minSize: 400,  maxSize: 2000,  spreadPct: 0.0009,  levels: 10, label:'ALTA VOL' },
+  extreme: { minSize: 100,  maxSize: 800,   spreadPct: 0.002,   levels: 8,  label:'EXTREMA VOL' },
 };
 
 function fmtSize(n){ return n>=1000 ? (n/1000).toFixed(1)+'K' : n.toString(); }
@@ -2561,7 +2993,7 @@ function removeChart(id){
 }
 
 const chartDimsById = {};
-const chartIndicators = { ema9: true, ema21: true, vwap: true, rsi: false, macd: false };
+const chartIndicators = { ema9: true, ema21: true, vwap: true, rsi: false, macd: false, gex: false };
 
 function calcEMA(closes, period){
   const k = 2/(period+1); let ema = closes[0];
@@ -2789,6 +3221,50 @@ function setupChartCursor(canvasWrap, cursorSvg, chartId){
   });
   canvasWrap.addEventListener('mouseleave', ()=> broadcastCursor(null));
 }
+
+function renderGEXPanel(chartId, sym){
+  const panel = document.getElementById('gexPanel-'+chartId);
+  const barsEl = document.getElementById('gexBars-'+chartId);
+  const netEl  = document.getElementById('gexNetVal-'+chartId);
+  if(!panel||!barsEl) return;
+  if(!chartIndicators.gex){ panel.style.display='none'; return; }
+  panel.style.display='block';
+  const stock = allStocks.find(s=>s.sym===sym);
+  if(!stock){ barsEl.innerHTML=''; return; }
+  const chain = genOptionChainForStock(stock, currentExpirationKey);
+  // Calcular GEX por strike: Δ² × OI × 100 × sign(dealer position)
+  const strikeMap = {};
+  chain.forEach(row=>{
+    if(!strikeMap[row.strike]) strikeMap[row.strike]=0;
+    const state = optionMarketState[contractStateKey(stock.sym,row.strike,row.optType,currentExpirationKey)];
+    const oi = state ? state.openInterest||row.openInterest : row.openInterest;
+    const gamma = row.gamma || 0.02;
+    const dealerPos = row.optType==='call' ? -1 : 1; // dealer sold call = short gamma = neg GEX
+    const buyVol = state?(state.buyVolume||0):0;
+    const sellVol= state?(state.sellVolume||0):0;
+    const netFlow = buyVol - sellVol;
+    const gex = gamma * oi * 100 * dealerPos * (1 + netFlow*0.001);
+    strikeMap[row.strike] += gex;
+  });
+  const strikes = Object.keys(strikeMap).map(Number).sort((a,b)=>a-b);
+  const values  = strikes.map(k=>strikeMap[k]);
+  const maxAbs  = Math.max(1, ...values.map(Math.abs));
+  const netGEX  = values.reduce((a,b)=>a+b,0);
+  if(netEl){ netEl.textContent='Net GEX: '+(netGEX>=0?'+':'')+Math.round(netGEX/1000)+'K'; netEl.style.color=netGEX>=0?'var(--bid)':'var(--ask)'; }
+  const atm = strikes.reduce((a,b)=>Math.abs(b-stock.price)<Math.abs(a-stock.price)?b:a, strikes[0]);
+  barsEl.innerHTML = strikes.map((strike,i)=>{
+    const val = values[i];
+    const h = Math.max(2, Math.abs(val/maxAbs)*70);
+    const isPos = val>=0;
+    const isAtm = strike===atm;
+    return `<div class="gex-bar-wrap" title="${strike}: ${Math.round(val)}">
+      ${isPos?`<div class="gex-bar positive${isAtm?' gex-atm':''}" style="height:${h}px"></div>`:
+               `<div style="height:${70-h}px"></div><div class="gex-bar negative${isAtm?' gex-atm':''}" style="height:${h}px"></div>`}
+      <div class="gex-strike-label">${strike}</div>
+    </div>`;
+  }).join('');
+}
+
 function broadcastCursor(candleIdx){
   chartInstances.forEach(ci=>{
     const cursorSvg = document.getElementById(`chartCursor-${ci.id}`);
@@ -3154,6 +3630,12 @@ function executeShareOrder(sym, side, qty, price){
   if(wasOpeningOrAdding) playerAccount.cashBalance += (side==='buy' ? -1 : 1) * qty * price;
   const stock = allStocks.find(s=>s.sym===sym);
   if(stock) stock._todayVolume += qty; // bugfix: player share trades must add to the real accumulated daily volume too
+  // Survival: cobrar comisión + registrar trade + verificar estado
+  if(typeof SURVIVAL !== 'undefined' && SURVIVAL.enabled){
+    survivalChargeCommission('stock', qty);
+    survivalRegisterTrade(sym, side, qty);
+    checkSurvivalStatus();
+  }
   // Broadcast to Firebase leaderboard
   try{
     const _db=window._fbDb; const _ref=window._fbRef; const _set=window._fbSet; const _push=window._fbPush;
@@ -3182,6 +3664,12 @@ function executeOptionOrder(sym, strike, optType, expiryKey, side, action, qty, 
   const wasOpeningOrAdding = realizedPL === 0;
   if(wasOpeningOrAdding) playerAccount.cashBalance += (side==='buy' ? -1 : 1) * qty * price * OPTION_CONTRACT_MULTIPLIER;
   pos.strike = strike; pos.optType = optType; pos.expiryKey = expiryKey; pos.sym = sym;
+  // Survival: cobrar comisión de opciones
+  if(typeof SURVIVAL !== 'undefined' && SURVIVAL.enabled){
+    survivalChargeCommission('option', null, qty);
+    survivalRegisterTrade(sym+'_opt', side, qty);
+    checkSurvivalStatus();
+  }
   if(action === 'open' && pos.openedOnDay == null) pos.openedOnDay = gameCalendar.totalDaysElapsed;
 
   // Bugfix: player executions must feed the SAME live volume the Option Chain/Option Stats read,
@@ -3614,7 +4102,7 @@ function renderLayout(){
       panel.draggable = true;
       panel.dataset.panelId = def.id;
       const closeBtn = def.id==='charts' ? '' : `<button class="panel-close" data-panel="${def.id}" title="Quitar panel">✕</button>`;
-      panel.innerHTML = `<div class="panel-header" draggable="false"><span class="drag-handle" title="Arrastrar para reordenar">⠿</span><h2>${t('panel.'+def.id, def.title)}</h2>${closeBtn}</div><div class="panel-body" id="body-${def.id}"></div>`;
+      panel.innerHTML = `<div class="panel-header" draggable="false"><span class="drag-handle" title="Arrastrar para reordenar">⠿</span><h2>${t('panel.'+def.id, def.title)}</h2>${closeBtn}</div><div class="panel-body" id="body-${def.id}"></div><div class="panel-resize-handle" title="Redimensionar"></div>`;
       cols[c].appendChild(panel);
     });
   }
@@ -3625,6 +4113,7 @@ function renderLayout(){
   });
 
   setupPanelDragAndDrop(layoutGrid);
+  layoutGrid.querySelectorAll('.panel').forEach(p=> setupPanelResize(p));
   buildPanelBodies();
   renderAllData();
 }
@@ -3661,6 +4150,28 @@ function setupPanelDragAndDrop(layoutGrid){
       col.classList.remove('drag-over');
       persistOrderFromDOM(layoutGrid);
     });
+  });
+}
+
+/* Resize de paneles — drag desde el handle inferior derecho */
+function setupPanelResize(panel){
+  const handle = panel.querySelector('.panel-resize-handle');
+  if(!handle) return;
+  let startX, startY, startW, startH;
+  handle.addEventListener('mousedown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    startX=e.clientX; startY=e.clientY;
+    startW=panel.offsetWidth; startH=panel.offsetHeight;
+    const onMove = ev=>{
+      const dw = ev.clientX - startX;
+      const dh = ev.clientY - startY;
+      panel.style.width  = Math.max(200, startW+dw)+'px';
+      panel.style.height = Math.max(100, startH+dh)+'px';
+      panel.querySelector('.panel-body').style.height = Math.max(60, startH+dh-40)+'px';
+    };
+    const onUp = ()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); };
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
   });
 }
 function getDragAfterElement(col, y){
@@ -3719,11 +4230,15 @@ function buildPanelBodies(){
             <button class="ind-btn on" onclick="chartIndicators.vwap=!chartIndicators.vwap;this.classList.toggle('on');renderAllData()">VWAP</button>
             <button class="ind-btn" onclick="chartIndicators.rsi=!chartIndicators.rsi;this.classList.toggle('on');renderAllData()">RSI</button>
             <button class="ind-btn" onclick="chartIndicators.macd=!chartIndicators.macd;this.classList.toggle('on');renderAllData()">MACD</button>
+            <button class="ind-btn" onclick="chartIndicators.gex=!chartIndicators.gex;this.classList.toggle('on');renderAllData()">GEX</button>
             <span style="margin-left:auto;display:flex;gap:4px;align-items:center">
               <span style="font-size:8px;color:var(--text-dim)">Zoom:</span>
               <button class="ind-btn" id="zoomIn-${ci.id}" onclick="chartZoomIn('${ci.id}')">+</button>
               <button class="ind-btn" id="zoomOut-${ci.id}" onclick="chartZoomOut('${ci.id}')">−</button>
               <button class="ind-btn" id="zoomReset-${ci.id}" onclick="chartZoomReset('${ci.id}')">⟳</button>
+            <span style="margin-left:8px;font-size:8px;color:var(--text-dim)">|</span>
+            <input id="alertPxInput-${ci.id}" placeholder="Alert $" style="width:64px;background:transparent;border:1px solid var(--border);color:var(--amber);font-family:var(--mono);font-size:9px;padding:2px 5px;border-radius:3px;outline:none" onkeydown="if(event.key==='Enter'){const v=+this.value;if(v>0){const s=allStocks.find(x=>x.sym==='${ci.sym}');addPriceAlert('${ci.sym}',v>=(s?s.price:v)?'above':'below',v);this.value='';}}">
+            <button class="ind-btn" onclick="const inp=document.getElementById('alertPxInput-${ci.id}');const v=+inp.value;if(v>0){const s=allStocks.find(x=>x.sym==='${ci.sym}');addPriceAlert('${ci.sym}',v>=(s?s.price:v)?'above':'below',v);inp.value='';}">🔔</button>
             </span>
           </div>
           <div class="chart-canvas-wrap" id="chartWrap-${ci.id}">
@@ -3732,6 +4247,16 @@ function buildPanelBodies(){
           </div>
           <div id="rsiPanel-${ci.id}" style="display:none;height:56px;border-top:1px solid var(--border)"></div>
           <div id="macdPanel-${ci.id}" style="display:none;height:56px;border-top:1px solid var(--border)"></div>
+          <div id="gexPanel-${ci.id}" style="display:none" class="gex-panel">
+            <div class="gex-header">
+              <span>⚡ GEX — Gamma Exposure por Strike</span>
+              <span id="gexNetVal-${ci.id}" style="margin-left:auto;font-weight:700"></span>
+            </div>
+            <div class="gex-bars" id="gexBars-${ci.id}"></div>
+            <div style="padding:2px 10px 4px;font-size:7.5px;color:var(--text-dim);font-family:var(--mono)">
+              🟢 GEX+: precio actúa como imán (MM compra al bajar) &nbsp;|&nbsp; 🔴 GEX-: precio se acelera (MM vende al bajar)
+            </div>
+          </div>
         `;
         gridInner.appendChild(chartPanel);
         setupChartCursor(chartPanel.querySelector(`#chartWrap-${ci.id}`), chartPanel.querySelector(`#chartCursor-${ci.id}`), ci.id);
@@ -3779,7 +4304,8 @@ function buildPanelBodies(){
         wrapEl.addEventListener('click', (e)=>{
           const mode = activeDrawingMode[ci.id];
           if(!mode) return;
-          const svgEl = document.getElementById(`chartSvg-${ci.id}`);
+          renderGEXPanel(ci.id, ci.sym);
+        const svgEl = document.getElementById(`chartSvg-${ci.id}`);
           const rect = svgEl.getBoundingClientRect();
           const dims = chartDimsById[ci.id];
           if(!dims) return;
@@ -4054,14 +4580,30 @@ function buildPanelBodies(){
         <span><i class="pl-dot" style="background:var(--panel-elevated); border:1px solid var(--border)"></i>Sin trades</span>
       </div>`;
       const plCal = document.getElementById('plCalGrid');
-      const plData = [null,null,1,-1,1,1,-1,1,1,-1,1,1,1,-1,1,-1,1,1,1,-1,1,1,-1,1,1,1,-1,1,1,1];
-      plData.forEach((v,i)=>{
+      // Usar historial real del jugador (guardado en playerDayHistory)
+      const history = window.playerDayHistory || [];
+      const totalDays = Math.max(30, history.length + 5);
+      for(let i=0; i<totalDays; i++){
         const d = document.createElement('div');
-        if(v===null){ d.className='pl-cal-day'; d.textContent=''; }
-        else if(v>0){ d.className='pl-cal-day win'; d.innerHTML=`<span>${i+1}</span><span>+$${(Math.random()*900+200).toFixed(0)}</span>`; }
-        else { d.className='pl-cal-day loss'; d.innerHTML=`<span>${i+1}</span><span>-$${(Math.random()*600+100).toFixed(0)}</span>`; }
+        const dayEntry = history[i];
+        const isToday = i === gameCalendar.totalDaysElapsed;
+        if(i > gameCalendar.totalDaysElapsed){ 
+          d.className='pl-cal-day'; d.style.opacity='.2';
+          d.innerHTML=`<span style="font-size:7px;color:var(--text-dim)">${i+1}</span>`;
+        } else if(!dayEntry){ 
+          d.className='pl-cal-day flat';
+          d.innerHTML=`<span>${i+1}</span>`;
+          if(isToday) d.style.border='1px solid var(--amber)';
+        } else if(dayEntry.pnl>0){ 
+          d.className='pl-cal-day win';
+          d.innerHTML=`<span>${i+1}</span><span>+$${Math.round(dayEntry.pnl)}</span>`;
+        } else { 
+          d.className='pl-cal-day loss';
+          d.innerHTML=`<span>${i+1}</span><span>-$${Math.abs(Math.round(dayEntry.pnl))}</span>`;
+        }
+        if(isToday) d.style.outline='1px solid var(--amber)';
         plCal.appendChild(d);
-      });
+      }
     }
     if(vis.mmdesk){
       const bMM = document.getElementById('body-mmdesk');
@@ -4491,12 +5033,17 @@ function executeMarketOrderAgainstBook(stock, side, qty){
   const printClass = sweptLevels > 1 ? 'SWEEP' : sweptLevels === 1 ? 'BLOCK' : 'FILL';
   recordStockTapeEntry(stock.sym, avgFill, qty - remaining, side, printClass, true); // isPlayer=true so the tape highlights it
 
-  // CIRCUIT BREAKER check before applying price
-  const dayChangePct = Math.abs((lastFillPrice / stock._openPrice) - 1) * 100;
-  const cbLimit = stock.volatility === 'extreme' ? 35 : 15;
-  if(dayChangePct >= cbLimit){
-    showCircuitBreakerBanner(stock.sym, dayChangePct, cbLimit);
-    return avgFill; // price does not update further, book replenish slows
+  // HALT automático si la acción sube/baja 100-500% en un solo movimiento
+  const dayChangePct = ((lastFillPrice - stock._openPrice) / stock._openPrice) * 100;
+  const absPct = Math.abs(dayChangePct);
+  const haltThreshold = stock.volatility==='extreme'?200:stock.volatility==='high'?150:100;
+  if(absPct >= haltThreshold && !haltedStocks[stock.sym]){
+    const haltMins = 5 + Math.floor(Math.random()*10);
+    haltedStocks[stock.sym] = { until: Date.now()+haltMins*60000, sym:stock.sym };
+    showSurvivalAlert('⛔ HALT AUTOMÁTICO — '+stock.sym+' movió '+absPct.toFixed(0)+'% — '+haltMins+' min', 'danger');
+    flashToast('⛔ TRADING HALT: '+stock.sym+' — '+haltMins+' min', true);
+    setTimeout(()=>{ delete haltedStocks[stock.sym]; showSurvivalAlert('✅ '+stock.sym+' RESUMED', 'ok'); }, haltMins*60000);
+    return avgFill;
   }
 
   // HYBRID price update (confirmed design): fill price drives 85%, flowForce minor 15%
@@ -4577,11 +5124,59 @@ function fillStockOrder(side, price, forceQty){
   // execute against real book (price walking + tape entry)
   const avgFill = executeMarketOrderAgainstBook(stock, side, qty);
   executeShareOrder(currentSym, side, qty, avgFill);
+  try{ playSound(side==='buy'?'buy':'sell'); }catch(e){}
   flashToast(`${side==='buy'?'Compra':'Venta'} ${qty.toLocaleString()}x ${currentSym} @ ${avgFill.toFixed(2)}${qty>500?' [BLOCK]':''}`);
   renderAllData();
   schedulePersist();
 }
 
+
+
+/* ===================================================================
+   PRICE ALERTS ENGINE
+   =================================================================== */
+let priceAlerts = []; // { id, sym, condition:'above'|'below', price, triggered:false }
+let _alertId = 1;
+
+function addPriceAlert(sym, condition, targetPrice){
+  priceAlerts.push({ id:_alertId++, sym, condition, price:targetPrice, triggered:false });
+  flashToast('🔔 Alerta: '+sym+' '+condition+' $'+targetPrice.toFixed(2));
+  renderPriceAlertsUI();
+}
+
+function checkPriceAlerts(){
+  priceAlerts.forEach(a=>{
+    if(a.triggered) return;
+    const stock = allStocks.find(s=>s.sym===a.sym);
+    if(!stock) return;
+    const hit = a.condition==='above' ? stock.price>=a.price : stock.price<=a.price;
+    if(hit){
+      a.triggered = true;
+      showSurvivalAlert('🔔 ALERTA: '+a.sym+' alcanzó $'+a.price.toFixed(2), 'ok');
+      flashToast('🔔 '+a.sym+' '+a.condition+' $'+a.price.toFixed(2), false);
+      // Sound
+      try{ playSound('alert'); }catch(e){}
+      renderPriceAlertsUI();
+    }
+  });
+}
+
+function renderPriceAlertsUI(){
+  const el = document.getElementById('priceAlertsContainer');
+  if(!el) return;
+  const active = priceAlerts.filter(a=>!a.triggered);
+  const done   = priceAlerts.filter(a=>a.triggered).slice(-3);
+  el.innerHTML = [...active,...done].map(a=>`
+    <div class="alert-row">
+      <span style="color:var(--text-dim);font-size:9px">${a.sym}</span>
+      <span class="alert-badge ${a.triggered?'alert-triggered':a.condition==='above'?'alert-above':'alert-below'}">
+        ${a.triggered?'✓ HIT':a.condition==='above'?'▲ ABOVE':'▼ BELOW'}
+      </span>
+      <span style="color:${a.condition==='above'?'var(--bid)':'var(--ask)'}">$${a.price.toFixed(2)}</span>
+      <span style="flex:1"></span>
+      ${!a.triggered?'<button onclick="priceAlerts=priceAlerts.filter(x=>x.id!=='+a.id+');renderPriceAlertsUI()" style="background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:11px">✕</button>':''}
+    </div>`).join('') || '<div style="padding:12px;font-size:10px;color:var(--text-dim);text-align:center">Sin alertas activas</div>';
+}
 
 /* ===================================================================
    LIMIT ORDER ENGINE
@@ -4642,6 +5237,7 @@ function checkLimitOrderFills(){
       const fillPx = o.side==='buy' ? bestAsk : bestBid;
       executeShareOrder(o.sym, o.side, o.qty, fillPx);
       addStockTapeEntry(o.sym, o.side, fillPx, o.qty, 'LIMIT');
+      try{playSound('fill');}catch(e){}
       flashToast(`✅ Limit ${o.side.toUpperCase()} ${o.qty}x ${o.sym} @ ${fillPx.toFixed(2)} ejecutada!`);
     }
   });
@@ -5839,6 +6435,8 @@ function renderAllData(){
     if(vis.ts) renderTS(book, displayPrice, displayVol);
     checkLimitOrderFills();
     checkStopOrderFills();
+    checkPriceAlerts();
+    if(typeof updateSurvivalHUD === 'function') updateSurvivalHUD();
     if(vis.activeTrader) renderActiveTrader(displayPrice, displayVol);
     if(vis.activeOptionTrader) renderActiveOptionTrader(currentMode==='stock' ? stockRef : null);
     if(vis.optionChain) renderOptionChain(currentMode==='stock' ? stockRef : null);
@@ -5909,6 +6507,7 @@ buildTopbar();
 buildTray();
 renderLayout();
 try{sbActivate('chart');}catch(e){}
+try{ survivalInit(); survivalChargeDailyFees(); }catch(e){ console.warn('Survival init',e); }
 startLiveEngine();
 setInterval(persistGameState, 15000); // periodic backup save, independent of the debounced one tied to specific actions
 document.getElementById('scannerToggle').addEventListener('click', ()=>{
@@ -6899,18 +7498,38 @@ function renderScannerPanel(){
       return ivB - ivA;
     });
 
-    const filterHtml = `<div class="scan-filter-row">
-      <button class="scan-filter-btn${_scannerFilter==='movers'?' active':''}"   onclick="_scannerFilter='movers';renderScannerPanel()">🔥 Movers</button>
-      <button class="scan-filter-btn${_scannerFilter==='volume'?' active':''}"   onclick="_scannerFilter='volume';renderScannerPanel()">📊 Volume</button>
-      <button class="scan-filter-btn${_scannerFilter==='gainers'?' active':''}"  onclick="_scannerFilter='gainers';renderScannerPanel()">▲ Gainers</button>
-      <button class="scan-filter-btn${_scannerFilter==='losers'?' active':''}"   onclick="_scannerFilter='losers';renderScannerPanel()">▼ Losers</button>
-      <button class="scan-filter-btn${_scannerFilter==='ivhigh'?' active':''}"   onclick="_scannerFilter='ivhigh';renderScannerPanel()">🔮 IV High</button>
+    const filterHtml = `<div class="scan-filter-row" style="flex-wrap:wrap;gap:4px">
+      <button class="scan-filter-btn${_scannerFilter==='movers'?' active':''}"    onclick="_scannerFilter='movers';renderScannerPanel()">🔥 Movers</button>
+      <button class="scan-filter-btn${_scannerFilter==='volume'?' active':''}"    onclick="_scannerFilter='volume';renderScannerPanel()">📊 Volume</button>
+      <button class="scan-filter-btn${_scannerFilter==='gainers'?' active':''}"   onclick="_scannerFilter='gainers';renderScannerPanel()">▲ Gainers</button>
+      <button class="scan-filter-btn${_scannerFilter==='losers'?' active':''}"    onclick="_scannerFilter='losers';renderScannerPanel()">▼ Losers</button>
+      <button class="scan-filter-btn${_scannerFilter==='ivhigh'?' active':''}"    onclick="_scannerFilter='ivhigh';renderScannerPanel()">🔮 IV High</button>
+      <button class="scan-filter-btn${_scannerFilter==='unusual'?' active':''}"   onclick="_scannerFilter='unusual';renderScannerPanel()">🐋 Unusual</button>
+      <button class="scan-filter-btn${_scannerFilter==='premarket'?' active':''}" onclick="_scannerFilter='premarket';renderScannerPanel()">🌅 Pre-mkt</button>
+      <button class="scan-filter-btn${_scannerFilter==='shortpop'?' active':''}"  onclick="_scannerFilter='shortpop';renderScannerPanel()">🚀 Squeeze</button>
     </div>`;
 
-    const list = _scannerFilter==='volume'?byVol:_scannerFilter==='gainers'?gainers:_scannerFilter==='losers'?losers:_scannerFilter==='ivhigh'?ivHigh:byChg;
+    // Unusual options activity — stocks con vol/OI ratio alto
+    const unusual = [...allStocks].map(s=>{
+      const stats = computeOptionStats(s);
+      const ratio = stats.totalCallVol + stats.totalPutVol > 0 ?
+        (stats.totalCallVol+stats.totalPutVol) / Math.max(1, s._todayVolume * 0.001) : 0;
+      return { ...s, _unusualScore: ratio * (stats.putCallRatio > 1.5 || stats.putCallRatio < 0.5 ? 2 : 1) };
+    }).sort((a,b)=>b._unusualScore-a._unusualScore);
+    // Pre-market movers (simulado: stocks con mayor move en primeros ticks del día)
+    const premarket = [...allStocks].filter(s=>isPreMarket()||gameCalendar.dayIndex===0)
+      .sort((a,b)=>Math.abs((b.price/b._openPrice)-1)-Math.abs((a.price/a._openPrice)-1));
+    // Squeeze candidates — short float alto + precio subiendo
+    const shortpop = [...allStocks].filter(s=>(s.shortFloat||0)>=10)
+      .sort((a,b)=>{
+        const scoreA = (a.shortFloat||0) * Math.max(0,(a.price/a._openPrice-1)*100);
+        const scoreB = (b.shortFloat||0) * Math.max(0,(b.price/b._openPrice-1)*100);
+        return scoreB-scoreA;
+      });
+    const list = _scannerFilter==='volume'?byVol:_scannerFilter==='gainers'?gainers:_scannerFilter==='losers'?losers:_scannerFilter==='ivhigh'?ivHigh:_scannerFilter==='unusual'?unusual:_scannerFilter==='premarket'?premarket:_scannerFilter==='shortpop'?shortpop:byChg;
 
     // section labels
-    const labels = { movers:'Top Movers by % Change', volume:'Top Volume Leaders', gainers:'Top Gainers Today', losers:'Top Losers Today', ivhigh:'Highest IV Rank' };
+    const labels = { movers:'Top Movers by % Change', volume:'Top Volume Leaders', gainers:'Top Gainers Today', losers:'Top Losers Today', ivhigh:'Highest IV Rank', unusual:'Unusual Options Activity', premarket:'Pre-Market Movers', shortpop:'Short Squeeze Candidates' };
     let html = tabHtml + filterHtml;
     html += `<div class="scan-section-label">${labels[_scannerFilter]||'Movers'} · ${list.length} símbolos</div>`;
     html += `<div class="scan-header" style="display:grid;grid-template-columns:22px 44px 1fr 54px 46px 46px;padding:4px 10px;font-size:7.5px;color:var(--text-dim);text-transform:uppercase;border-bottom:1px solid var(--border);font-family:var(--mono)"><span>#</span><span>SYM</span><span>SECTOR</span><span>PRICE</span><span>%CHG</span><span>IV RNK</span></div>`;
@@ -7937,6 +8556,366 @@ function renderMMDesk() {
     };
   }
 })();
+
+
+/* ===================================================================
+   ADVANCED MARKET MECHANICS — conecta todo al tick engine
+   =================================================================== */
+
+/* ── 1. PHASE ENGINE → TICK FORCE ───────────────────────────────────
+   Conecta updateMarketPhase y getPhaseOrderParams al tickStockEngine.
+   Añade FAKEOUT, LIQUIDITY_GRAB y STOP_HUNT como fases especiales.
+   ----------------------------------------------------------------- */
+
+// Nuevas fases de trampa
+MARKET_PHASES['FAKEOUT_UP']    = { duration:[5,12],  next:['IMPULSE_DOWN','CONSOLIDATION'] };
+MARKET_PHASES['FAKEOUT_DOWN']  = { duration:[5,12],  next:['IMPULSE_UP','CONSOLIDATION'] };
+MARKET_PHASES['STOP_HUNT']     = { duration:[3,8],   next:['REVERSAL_UP','REVERSAL_DOWN'] };
+MARKET_PHASES['SQUEEZE']       = { duration:[20,50], next:['DISTRIBUTION','CONSOLIDATION'] };
+
+PHASE_TRANSITIONS['PULLBACK']['FAKEOUT_DOWN']     = 0.08;
+PHASE_TRANSITIONS['BOUNCE']['FAKEOUT_UP']         = 0.08;
+PHASE_TRANSITIONS['CONSOLIDATION']['STOP_HUNT']   = 0.06;
+PHASE_TRANSITIONS['COMPRESSION']['FAKEOUT_UP']    = 0.25;
+PHASE_TRANSITIONS['COMPRESSION']['FAKEOUT_DOWN']  = 0.25;
+// Normalizar pesos (aproximado, el selector ya maneja overflow)
+
+function getPhaseForceBias(stock){
+  const p = stock._phase;
+  if(!p) return 0;
+  switch(p){
+    case 'IMPULSE_UP':    return  0.80;
+    case 'IMPULSE_DOWN':  return -0.80;
+    case 'PULLBACK':      return -0.20;
+    case 'BOUNCE':        return  0.20;
+    case 'ACCUMULATION':  return  0.10; // quiet, hidden
+    case 'DISTRIBUTION':  return -0.10;
+    case 'REVERSAL_UP':   return  0.60;
+    case 'REVERSAL_DOWN': return -0.60;
+    case 'COMPRESSION':   return  0;
+    case 'FAKEOUT_UP':    return  0.90; // fuerte arriba — trampa alcista
+    case 'FAKEOUT_DOWN':  return -0.90; // fuerte abajo — trampa bajista
+    case 'STOP_HUNT':     // barre stops: pico breve en dirección contraria al trend
+      return stock._regime === 'trend_up' ? -0.70 : 0.70;
+    case 'SQUEEZE':       return  1.20; // explosivo
+    default: return 0;
+  }
+}
+
+function announcePhaseTrap(stock, phase){
+  if(stock.sym !== currentSym) return; // solo para el símbolo activo
+  const msgs = {
+    FAKEOUT_UP:   `⚠️ ${stock.sym}: Fakeout alcista detectado — trampa posible`,
+    FAKEOUT_DOWN: `⚠️ ${stock.sym}: Fakeout bajista detectado — trampa posible`,
+    STOP_HUNT:    `🎯 ${stock.sym}: Stop hunt — barrido de stops en curso`,
+    SQUEEZE:      `🚀 ${stock.sym}: SHORT SQUEEZE iniciado`,
+  };
+  if(msgs[phase]) showSurvivalAlert(msgs[phase], phase==='SQUEEZE'?'ok':'warn');
+}
+
+// Patch transitionPhase para anunciar trampas
+const _origTransitionPhase = transitionPhase;
+window.transitionPhase = function(stock){
+  _origTransitionPhase(stock);
+  announcePhaseTrap(stock, stock._phase);
+  // Squeeze: solo si tiene high short float
+  if(stock._phase === 'SQUEEZE' && (stock.shortFloat||0) < 10){
+    // No hay suficientes cortos — no hay squeeze real, volver a impulse_up
+    stock._phase = 'IMPULSE_UP';
+  }
+};
+transitionPhase = window.transitionPhase;
+
+/* ── 2. OPTIONS → PRECIO SUBYACENTE (GEX / Dealer Hedging) ──────────
+   Cuando alguien compra calls: dealer vendió calls → compra acciones
+   Cuando alguien compra puts: dealer vendió puts → vende acciones
+   La fuerza es proporcional al volumen neto y al delta del strike
+   ----------------------------------------------------------------- */
+const GEX_HEDGE_RATIO  = 0.00018; // cuánto mueve el precio 1 contrato comprado
+const GEX_DECAY        = 0.92;    // la fuerza decae por tick
+
+function computeGEXForce(stock){
+  if(!stock._fastFlow) return 0;
+  let netDelta = 0;
+  const chain = genOptionChainForStock(stock, currentExpirationKey);
+  chain.forEach(row=>{
+    const stateKey = contractStateKey(stock.sym, row.strike, row.optType, currentExpirationKey);
+    const state = optionMarketState[stateKey];
+    if(!state) return;
+    const netBuy = (state.buyVolume||0) - (state.sellVolume||0);
+    if(netBuy === 0) return;
+    // Delta del contrato: calls positivo, puts negativo
+    const contractDelta = row.optType === 'call' ? (row.delta||0.5) : -(Math.abs(row.delta)||0.5);
+    // Dealer hedge: dealer vendió → tiene delta contrario → hedgea en dirección opuesta
+    // Si player compra call (buy), dealer es short call → dealer compra acciones → +force
+    netDelta += netBuy * contractDelta * GEX_HEDGE_RATIO;
+  });
+  return Math.max(-0.8, Math.min(0.8, netDelta)); // capped
+}
+
+/* ── 3. IV CRUSH post-earnings ───────────────────────────────────────
+   Cuando hay un earnings event: IV sube 2-3x antes, luego colapsa
+   ----------------------------------------------------------------- */
+const stockEarningsState = {}; // sym -> { scheduled: bool, daysUntil: int, happened: bool }
+
+function scheduleEarnings(stock){
+  if(stockEarningsState[stock.sym]) return;
+  // Earnings cada 90 días de juego aprox, con algo de aleatorio
+  const daysUntil = 5 + Math.floor(Math.random()*15);
+  stockEarningsState[stock.sym] = { scheduled:true, daysUntil, happened:false, ivMult:1 };
+}
+
+function updateEarningsIV(stock){
+  scheduleEarnings(stock);
+  const state = stockEarningsState[stock.sym];
+  if(!state) return 1;
+  state.daysUntil -= (1/500); // decrementar por tick (500 ticks ≈ 1 día de juego)
+  if(state.daysUntil > 1){
+    // Normal
+    state.ivMult = 1;
+  } else if(state.daysUntil > 0){
+    // Pre-earnings: IV sube progresivamente hasta 2.5x
+    state.ivMult = 1 + (1-state.daysUntil) * 1.5;
+  } else if(!state.happened){
+    // EARNINGS — gap de precio + IV crush inmediato
+    state.happened = true;
+    state.ivMult = 0.4; // IV crush: cae al 40%
+    const beatOrMiss = Math.random();
+    const gapPct = stock.volatility === 'extreme' ? 0.25 : stock.volatility === 'high' ? 0.15 : 0.08;
+    const direction = beatOrMiss > 0.55 ? 1 : beatOrMiss < 0.30 ? -1 : (Math.random()>0.5?0.3:-0.3);
+    const gap = stock.price * gapPct * direction;
+    stock.price = Math.max(0.5, +(stock.price + gap).toFixed(2));
+    if(stock.sym === currentSym){
+      const msg = direction > 0.5 ? `📈 EARNINGS BEAT — ${stock.sym} +${(gapPct*100).toFixed(0)}%` :
+                  direction < -0.5 ? `📉 EARNINGS MISS — ${stock.sym} ${(gapPct*100*direction).toFixed(0)}%` :
+                  `📊 EARNINGS IN-LINE — ${stock.sym} (IV crush activo)`;
+      showSurvivalAlert(msg, direction > 0 ? 'ok' : 'danger');
+    }
+    // Reagendar earnings
+    setTimeout(()=>{
+      stockEarningsState[stock.sym] = { scheduled:true, daysUntil: 20+Math.floor(Math.random()*25), happened:false, ivMult:1 };
+    }, 8000);
+  }
+  return Math.max(0.35, state.ivMult);
+}
+
+/* ── 4. BLACK SWAN ───────────────────────────────────────────────────
+   1% probabilidad por día de juego de un crash sectorial o raro
+   ----------------------------------------------------------------- */
+let _blackSwanCooldown = 0;
+
+function maybeBlackSwan(){
+  if(Date.now() < _blackSwanCooldown) return;
+  if(Math.random() > 0.0002) return; // ~1% por día de juego a 500 ticks/día
+  _blackSwanCooldown = Date.now() + 60000 * 15; // cooldown 15 min reales
+  
+  const swanTypes = [
+    { name:'Flash Crash',        sectorWide:false, pct:-0.18, single:true },
+    { name:'Sector Collapse',    sectorWide:true,  pct:-0.22, single:false },
+    { name:'Liquidity Crisis',   sectorWide:false, pct:-0.12, spreadMult:8 },
+    { name:'Geopolitical Shock', sectorWide:true,  pct:-0.15, single:false },
+    { name:'Short Squeeze Mania',sectorWide:false, pct:+0.35, single:true },
+  ];
+  const swan = swanTypes[Math.floor(Math.random()*swanTypes.length)];
+  
+  if(swan.single){
+    const target = allStocks[Math.floor(Math.random()*allStocks.length)];
+    target.price = Math.max(0.5, +(target.price * (1+swan.pct)).toFixed(2));
+    if(swan.spreadMult && orderBooks[target.sym]){
+      // Spreads se abren — reinit book con parámetros extremos
+      orderBooks[target.sym] = null;
+    }
+  } else {
+    // Sector entero
+    const sector = universe[Math.floor(Math.random()*universe.length)];
+    allStocks.filter(s=>s.sectorKey===sector.sectorKey).forEach(s=>{
+      s.price = Math.max(0.5, +(s.price*(1+swan.pct*(0.8+Math.random()*0.4))).toFixed(2));
+      orderBooks[s.sym] = null;
+    });
+  }
+  
+  showSurvivalAlert(`🦢 BLACK SWAN: ${swan.name} — mercado en shock`, 'danger');
+  survivalDamageRiskScore(5, 'Black swan event');
+  try{playSound('blackswan');}catch(e){}
+  flashToast(`⚠️ BLACK SWAN: ${swan.name}`, true);
+}
+
+/* ── 5. SHORT SQUEEZE ────────────────────────────────────────────────
+   Stocks con shortFloat alto son candidatos a squeeze cuando
+   el precio sube rápidamente y los cortos tienen que cubrir
+   ----------------------------------------------------------------- */
+function maybeShortSqueeze(stock){
+  const sf = stock.shortFloat || 0;
+  if(sf < 15) return; // solo si hay suficientes cortos (>15% float)
+  const priceUp3Day = stock._peakPrice ? (stock.price/stock._troughPrice - 1) : 0;
+  if(priceUp3Day < 0.05) return; // necesita haber subido 5%+ para disparar
+  if(Math.random() > 0.002) return; // baja probabilidad por tick
+  if(stock._phase === 'SQUEEZE') return; // ya está en squeeze
+  stock._phase = 'SQUEEZE';
+  stock._phaseTicks = 20 + Math.floor(Math.random()*30);
+  announcePhaseTrap(stock, 'SQUEEZE');
+}
+
+/* ── 6. HALT ─────────────────────────────────────────────────────────
+   Acción se detiene N minutos reales. Si tienes posición: no puedes salir
+   ----------------------------------------------------------------- */
+const haltedStocks = {}; // sym -> { until: timestamp }
+let _haltCooldown = 0;
+
+function maybeHalt(){
+  if(Date.now() < _haltCooldown) return;
+  if(Math.random() > 0.00015) return;
+  _haltCooldown = Date.now() + 120000; // cooldown 2 min
+  
+  // Solo stocks extremos o high vol
+  const candidates = allStocks.filter(s=>['extreme','high'].includes(s.volatility));
+  if(!candidates.length) return;
+  const target = candidates[Math.floor(Math.random()*candidates.length)];
+  if(haltedStocks[target.sym]) return;
+  
+  const haltMinutes = 2 + Math.floor(Math.random()*8); // 2-10 minutos reales
+  haltedStocks[target.sym] = { until: Date.now() + haltMinutes*60000, sym:target.sym };
+  
+  const isCurrentSym = target.sym === currentSym;
+  if(isCurrentSym) showSurvivalAlert(`⛔ HALT — ${target.sym} detenido ${haltMinutes} min. No puedes operar.`, 'danger');
+  flashToast(`⛔ TRADING HALT: ${target.sym} — ${haltMinutes} minutos`, true);
+  
+  setTimeout(()=>{
+    delete haltedStocks[target.sym];
+    if(target.sym === currentSym) showSurvivalAlert(`✅ ${target.sym} RESUMED — Trading habilitado`, 'ok');
+  }, haltMinutes*60000);
+}
+
+function isStockHalted(sym){ return !!haltedStocks[sym]; }
+
+/* ── 7. HOOK CENTRAL — conectar todo a tickStockEngine ──────────────
+   Se engancha en el loop del tick para ejecutar todos los sistemas
+   ----------------------------------------------------------------- */
+(function patchTickEngine(){
+  const _origTick2 = window.tickStockEngine || tickStockEngine;
+  const _patched = function(stock){
+    // Halt check — skip tick si está detenida
+    if(isStockHalted(stock.sym)) return;
+    
+    // Phase Engine
+    updateMarketPhase(stock);
+    const phaseBias = getPhaseForceBias(stock);
+    
+    // GEX force (opciones → precio)
+    const gexForce = computeGEXForce(stock);
+    
+    // Earnings IV
+    const ivMult = updateEarningsIV(stock);
+    if(ivMult !== 1) stock._earningsIVMult = ivMult;
+    
+    // Short squeeze check
+    maybeShortSqueeze(stock);
+    
+    // Black swan (baja prob)
+    if(stock === allStocks[0]) maybeBlackSwan(); // solo en el primer stock para no multiplicar
+    
+    // Halt check
+    if(stock === allStocks[0]) maybeHalt();
+    
+    // Inject phase bias y GEX en stock para que tickStockEngine lo use
+    stock._externalForceBias = (phaseBias * 0.012) + (gexForce * 0.008);
+    
+    // Llamar al tick original
+    _origTick2(stock);
+    
+    // Limpiar
+    stock._externalForceBias = 0;
+  };
+  window.tickStockEngine = _patched;
+  // Actualizar la referencia en el interval también
+  if(typeof allStocks !== 'undefined'){
+    allStocks.forEach(s=>{ if(!s._phase) initMarketPhase(s); });
+  }
+})();
+
+/* ── 8. Aplicar _externalForceBias dentro de tickStockEngine ─────────
+   Se agrega a targetForcePct automáticamente via el patch
+   ----------------------------------------------------------------- */
+// Patch el targetForcePct para incluir externalForceBias
+// (tickStockEngine ya calcula targetForcePct — lo extendemos via stock._externalForceBias)
+
+/* ── 9. BLOCK DE TRADES EN STOCK HALTED ─────────────────────────────
+   Impedir fills si el stock está en halt
+   ----------------------------------------------------------------- */
+const _origFillStock = fillStockOrder;
+window.fillStockOrder = function(side, price, forceQty){
+  if(isStockHalted(currentSym)){
+    showSurvivalAlert(`⛔ ${currentSym} está en HALT — no puedes operar`, 'danger');
+    flashToast(`Trading bloqueado — ${currentSym} en halt`, true);
+    return;
+  }
+  _origFillStock(side, price, forceQty);
+};
+fillStockOrder = window.fillStockOrder;
+
+/* ── 10. FIRMS / ROLES ───────────────────────────────────────────────
+   El jugador elige su rol al hacer login por primera vez.
+   Cada rol tiene restricciones y ventajas distintas.
+   ─────────────────────────────────────────────────────────────────── */
+const FIRMS = {
+  retail:    { name:'Retail Trader',    capital:10000,  pdtActive:true,  maxRisk:0.10, leverage:1,   drawdownLimit:10, label:'🧑 Retail',    color:'#448AFF', desc:'PDT activo. Capital limitado. Sin ventajas especiales. El modo difícil real.' },
+  prop:      { name:'Prop Trader',      capital:50000,  pdtActive:false, maxRisk:0.02, leverage:5,   drawdownLimit:5,  label:'⚡ Prop',       color:'#FFD600', desc:'Sin PDT. Riesgo máximo 2% por trade. Leverage 5x. Si violas el risk: eliminado.' },
+  hedgefund: { name:'Hedge Fund',       capital:500000, pdtActive:false, maxRisk:0.05, leverage:2,   drawdownLimit:8,  label:'🏛️ HF',         color:'#E040FB', desc:'Capital grande pero drawdown 8% = liquidación instantánea. Ve dark pool.' },
+  mm:        { name:'Market Maker',     capital:200000, pdtActive:false, maxRisk:0.15, leverage:10,  drawdownLimit:12, label:'🏦 MM',         color:'#00E676', desc:'Debe cotizar bid/ask siempre. Gana el spread. Puede tomar posiciones grandes.' },
+  hft:       { name:'HFT Firm',         capital:25000,  pdtActive:false, maxRisk:0.05, leverage:3,   drawdownLimit:3,  label:'⚡⚡ HFT',      color:'#FF4081', desc:'Solo puede tradear 0DTE opciones. Fills instantáneos. Drawdown 3% = fuera.' },
+};
+
+let playerFirm = null; // se setea al elegir rol
+
+function showFirmSelector(){
+  const existing = document.getElementById('firmSelectorOverlay');
+  if(existing) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'firmSelectorOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:99998;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;font-family:var(--mono)';
+  overlay.innerHTML = `
+    <div style="font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:#fff;letter-spacing:-2px">ELIGE TU FIRMA</div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:-12px;letter-spacing:.5px">Esta decisión define tus reglas para siempre en este servidor</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:800px;width:90%">
+      ${Object.entries(FIRMS).map(([key,f])=>`
+        <div onclick="selectFirm('${key}')" style="background:#0A0A0A;border:1px solid #1E1E1E;border-radius:6px;padding:16px;cursor:pointer;transition:all .15s" 
+          onmouseover="this.style.borderColor='${f.color}';this.style.background='rgba(0,0,0,.8)'"
+          onmouseout="this.style.borderColor='#1E1E1E';this.style.background='#0A0A0A'">
+          <div style="font-size:18px;margin-bottom:6px">${f.label}</div>
+          <div style="font-size:13px;font-weight:700;color:${f.color};margin-bottom:6px">${f.name}</div>
+          <div style="font-size:9px;color:var(--text-dim);line-height:1.6;margin-bottom:10px">${f.desc}</div>
+          <div style="display:flex;flex-direction:column;gap:3px;font-size:9px">
+            <div style="display:flex;justify-content:space-between"><span style="color:#333">Capital</span><span style="color:#fff">$${(f.capital/1000).toFixed(0)}K</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#333">Drawdown límite</span><span style="color:var(--ask)">${f.drawdownLimit}%</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#333">PDT</span><span style="color:${f.pdtActive?'var(--ask)':'var(--bid)'}">${f.pdtActive?'ACTIVO':'NO'}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#333">Leverage</span><span style="color:var(--amber)">${f.leverage}x</span></div>
+          </div>
+        </div>`).join('')}
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+window.selectFirm = function(key){
+  const firm = FIRMS[key];
+  if(!firm) return;
+  playerFirm = key;
+  // Aplicar capital y restricciones
+  playerAccount.cashBalance = firm.capital;
+  SURVIVAL.MAX_DRAWDOWN_PCT = firm.drawdownLimit;
+  SURVIVAL.peakBalance = firm.capital;
+  SURVIVAL.dayStartBalance = firm.capital;
+  // Guardar en Firebase
+  try{
+    const _db=window._fbDb; const _ref=window._fbRef; const _set=window._fbSet;
+    if(_db&&_ref&&_set&&playerAccount.uid)
+      _set(_ref(_db,'players/'+playerAccount.uid+'/firm'), key);
+  }catch(e){}
+  document.getElementById('firmSelectorOverlay')?.remove();
+  showSurvivalAlert('✅ Firma elegida: '+firm.name+' — ¡Buena suerte!', 'ok');
+  survivalInit();
+  renderAllData();
+  flashToast('Bienvenido a '+firm.name+' — Capital: $'+firm.capital.toLocaleString());
+};
 
 </script>
 </body>
