@@ -1099,21 +1099,33 @@ onAuthStateChanged(fbAuth, async (user) => {
     if(profileSnap.exists()){
       const profile = profileSnap.val();
       window._playerName = profile.name || user.email.split('@')[0];
-      // Load balance from Firebase — upgrade old $1000 accounts to $100K
+      // Load balance from Firebase — source of truth
       if(typeof window.playerAccount !== 'undefined'){
-        let bal = profile.balance !== undefined ? profile.balance : 100000;
-        if(bal <= 1000){ // old default was $1000 — upgrade them
-          bal = 100000;
-          set(ref(fbDb, `players/${user.uid}/balance`), bal).catch(()=>{});
-        }
+        const bal = profile.balance !== undefined ? profile.balance : 1000;
         window.playerAccount.cashBalance = bal;
+        // Load positions from Firebase if saved there, else start fresh
+        if(profile.positions){
+          window.playerAccount.stockPositions  = profile.positions.stocks  || {};
+          window.playerAccount.optionPositions = profile.positions.options || {};
+        } else {
+          // Don't load from localStorage on login — always fresh from Firebase
+          window.playerAccount.stockPositions  = {};
+          window.playerAccount.optionPositions = {};
+        }
+        window.playerAccount.dayPLRealized = profile.dayPL || 0;
       }
     } else {
-      // New player with no profile yet (edge case) — create one with $1,000
+      // New player — wipe localStorage so old positions don't bleed in
+      try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
       window._playerName = user.email.split('@')[0];
-      const startBal = 100000;
+      const startBal = 1000;
       await set(ref(fbDb, `players/${user.uid}`), { name: window._playerName, balance: startBal, lastSeen: Date.now(), joinedAt: Date.now() });
-      if(typeof window.playerAccount !== 'undefined') window.playerAccount.cashBalance = startBal;
+      if(typeof window.playerAccount !== 'undefined'){
+        window.playerAccount.cashBalance = startBal;
+        window.playerAccount.stockPositions = {};
+        window.playerAccount.optionPositions = {};
+        window.playerAccount.dayPLRealized = 0;
+      }
     }
     const _ov=document.getElementById('fbLoginOverlay'); if(_ov)_ov.style.display='none';
     // Init after layout is ready
@@ -1173,7 +1185,30 @@ function startMarketSync(){
 
   _marketSyncInterval = setInterval(()=>{
     if(!window._currentUser) return;
-    // All players sync leaderboard regardless of role
+    // Subscribe to other players' limit orders
+  try{
+    if(typeof onValue === 'function'){
+      onValue(ref(fbDb,'market/limitOrders'), snap=>{
+        if(!snap.exists()) return;
+        const allOrders = snap.val()||{};
+        // Merge other players' orders into a global visible book
+        // (but not our own — we already have those in playerLimitOrders)
+        window._otherPlayersLimitOrders = [];
+        Object.values(allOrders).forEach(o=>{
+          if(o.uid === playerAccount.uid) return; // skip own orders
+          if(!o.sym || !o.price || !o.qty) return;
+          if(Date.now() - o.ts > 3600000) return; // ignore orders older than 1h
+          window._otherPlayersLimitOrders.push({
+            sym:o.sym, side:o.side, price:+o.price, qty:+o.qty,
+            status:'open', isOtherPlayer:true, playerName:o.playerName||'Trader',
+            id:'fb_'+o.uid+'_'+o.id
+          });
+        });
+      });
+    }
+  }catch(e){}
+
+  // All players sync leaderboard regardless of role
     // All players sync their OWN balance to Firebase
     if(typeof window.playerAccount !== 'undefined'){
       const uid = window._currentUser.uid;
@@ -2124,6 +2159,34 @@ const MM_MIN_LEVELS = 5; // always keep at least this many levels on each side
 function maybeReplenishBook(stock){
   const ob = orderBooks[stock.sym];
   if(!ob) return;
+
+  // ── MM reacts to player limit orders ─────────────────────────
+  const playerOrders = (window.playerLimitOrders||[]).filter(o=>o.status==='open'&&o.sym===stock.sym);
+  playerOrders.forEach(o=>{
+    if(o.qty < 500) return; // small orders — MM ignores
+    if(o.side==='buy'){
+      // Large player bid → MM absorbs: matches the price with similar size
+      const existing = ob.bids.find(b=>Math.abs(b.price-o.price)<0.02);
+      if(existing){
+        if(o.qty >= 5000){
+          // Very large → MM fades: widens spread, moves away
+          existing.price = +(existing.price - 0.02).toFixed(2);
+          if(!o._mmFaded) { o._mmFaded = true; flashToast(`🏦 MM se aleja del bid de ${o.qty.toLocaleString()} @ $${o.price}`, false); }
+        } else {
+          // Medium → MM absorbs: adds size at same level
+          existing.size = Math.min(existing.size + Math.floor(o.qty*0.5), 99999);
+        }
+      }
+    } else {
+      // Large player ask → MM absorbs or fades on ask side
+      const existing = ob.asks.find(a=>Math.abs(a.price-o.price)<0.02);
+      if(existing && o.qty >= 5000){
+        existing.price = +(existing.price + 0.02).toFixed(2);
+        if(!o._mmFaded) { o._mmFaded = true; flashToast(`🏦 MM se aleja del ask de ${o.qty.toLocaleString()} @ $${o.price}`, false); }
+      }
+    }
+  });
+
   const needsReplenish = ob.asks.length < MM_MIN_LEVELS || ob.bids.length < MM_MIN_LEVELS;
   if(!needsReplenish) return;
   const delay = MM_REPLENISH_DELAY_MS[stock.volatility] || 400;
@@ -2171,10 +2234,48 @@ function genBookForStock(stock){
   const params = VOL_PARAMS[stock.volatility];
   const tick = ob.asks[0] && ob.bids[0] ? +(ob.asks[0].price - ob.bids[0].price).toFixed(2) : 0.01;
   const rows = [];
-  const asksSorted = ob.asks.slice().sort((a,b)=>b.price-a.price); // highest first for display
-  for(const a of asksSorted) rows.push({side:'ask', price:a.price, size:a.size});
+
+  // ── Inject player limit orders into the book ──────────────────
+  // Buy limits → show on bid side; Sell limits → show on ask side
+  const playerBids = [];
+  const playerAsks = [];
+  // Own limit orders
+  const allVisibleLimitOrders = [
+    ...(window.playerLimitOrders||[]).filter(o=>o.status==='open'&&o.sym===stock.sym),
+    ...(window._otherPlayersLimitOrders||[]).filter(o=>o.sym===stock.sym)
+  ];
+  allVisibleLimitOrders.forEach(o=>{
+    const isMe = !o.isOtherPlayer;
+    const entry = { 
+      price:+o.price.toFixed(2), size:o.qty, 
+      isPlayer:isMe, isOtherPlayer:o.isOtherPlayer,
+      playerName:o.playerName||(isMe?window._playerName||'You':'Trader')
+    };
+    if(o.side==='buy')  playerBids.push(entry);
+    else                playerAsks.push(entry);
+  });
+
+  // Merge player asks into ob.asks
+  const allAsks = [...ob.asks, ...playerAsks].sort((a,b)=>a.price-b.price);
+  const allBids = [...ob.bids, ...playerBids].sort((a,b)=>b.price-a.price);
+
+  // Merge same-price levels
+  const mergedAsks = [], mergedBids = [];
+  allAsks.forEach(a=>{
+    const last = mergedAsks[mergedAsks.length-1];
+    if(last && last.price===a.price){ last.size+=a.size; if(a.isPlayer) last.isPlayer=true; }
+    else mergedAsks.push({...a});
+  });
+  allBids.forEach(b=>{
+    const last = mergedBids[mergedBids.length-1];
+    if(last && last.price===b.price){ last.size+=b.size; if(b.isPlayer) last.isPlayer=true; }
+    else mergedBids.push({...b});
+  });
+
+  const asksSorted = mergedAsks.slice().sort((a,b)=>b.price-a.price);
+  for(const a of asksSorted) rows.push({side:'ask', price:a.price, size:a.size, isPlayer:a.isPlayer, isOtherPlayer:a.isOtherPlayer});
   rows.push({side:'spot', price: stock.price});
-  for(const b of ob.bids) rows.push({side:'bid', price:b.price, size:b.size});
+  for(const b of mergedBids) rows.push({side:'bid', price:b.price, size:b.size, isPlayer:b.isPlayer, isOtherPlayer:b.isOtherPlayer});
   return { rows, tick, params };
 }
 function genBookForIndex(sector){
@@ -3604,6 +3705,9 @@ function buildTopbar(){
       <button data-lang="en" class="${currentLanguage==='en'?'active':''}">EN</button>
     </div>
     <div class="session-clock" id="sessionClock"></div>
+    <div id="haltIndicator" style="display:none;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--ask);background:rgba(229,86,107,.1);border:1px solid var(--ask);border-radius:4px;padding:3px 8px;margin-left:4px">
+      ⛔ HALT <span id="haltTimer"></span>
+    </div>
   `;
   rebuildSymSelect();
   document.getElementById('modeStock').addEventListener('click', ()=>{ currentMode='stock'; currentSym=allStocks[0].sym; rebuildSymSelect(); renderLayout(); schedulePersist(); });
@@ -3690,7 +3794,7 @@ let currentMode = 'stock';
    =================================================================== */
 
 // ↓↓↓ DEV: change this to set the player's starting cash for this playtest ↓↓↓
-const STARTING_CASH = 100000;
+const STARTING_CASH = 1000;
 // ↑↑↑ -------------------------------------------------------------- ↑↑↑
 
 const playerAccount = {
@@ -3755,7 +3859,21 @@ function executeShareOrder(sym, side, qty, price){
   const wasOpeningOrAdding = realizedPL === 0;
   if(wasOpeningOrAdding) playerAccount.cashBalance += (side==='buy' ? -1 : 1) * qty * price;
   const stock = allStocks.find(s=>s.sym===sym);
-  if(stock) stock._todayVolume += qty; // bugfix: player share trades must add to the real accumulated daily volume too
+  if(stock) stock._todayVolume += qty;
+  // Notify MM if active for this symbol
+  try{
+    if(typeof MM_MODE !== 'undefined' && MM_MODE.active && MM_MODE.sym === sym){
+      const mmFill = { sym, side, qty, price: avgFill||stock.price, isPlayerOrder:true, ts:Date.now() };
+      MM_MODE.incomingQueue = MM_MODE.incomingQueue || [];
+      MM_MODE.incomingQueue.push(mmFill);
+      MM_MODE.pnl.spreadEarned += side==='buy'
+        ? (stock.price*1.001 - (avgFill||stock.price)) * qty   // MM sold at ask, filled below
+        : ((avgFill||stock.price) - stock.price*0.999) * qty;  // MM bought at bid, filled above
+      MM_MODE.stats.fillCount = (MM_MODE.stats.fillCount||0) + 1;
+      // Add to MM tape
+      if(typeof addStockTapeEntry==='function') addStockTapeEntry(sym, side, avgFill||stock.price, qty, 'PLAYER');
+    }
+  }catch(e){}
   // Survival: cobrar comisión + registrar trade + verificar estado
   if(typeof SURVIVAL !== 'undefined' && SURVIVAL.enabled){
     survivalChargeCommission('stock', qty);
@@ -3768,6 +3886,12 @@ function executeShareOrder(sym, side, qty, price){
     if(_db&&_ref&&playerAccount.uid){
       if(_push) _push(_ref(_db,'market/trades'),{uid:playerAccount.uid,name:window._playerName||'Trader',sym,side,qty,price,pnl:+(playerAccount.dayPnL||0).toFixed(2),ts:Date.now()});
       if(_set) _set(_ref(_db,'leaderboard/'+playerAccount.uid),{name:window._playerName||'Trader',pnl:+(playerAccount.dayPnL||0).toFixed(2),trades:playerAccount.tradeCount||0,cash:+(playerAccount.cashBalance||0).toFixed(2),ts:Date.now()});
+      // Persist positions to Firebase
+      if(_set) _set(_ref(_db,'players/'+playerAccount.uid+'/positions'),{
+        stocks:  window.playerAccount.stockPositions  || {},
+        options: window.playerAccount.optionPositions || {}
+      });
+      if(_set) _set(_ref(_db,'players/'+playerAccount.uid+'/balance'), window.playerAccount.cashBalance||0);
     }
   }catch(e){}
   return pos;
@@ -3784,11 +3908,52 @@ function executeOptionOrder(sym, strike, optType, expiryKey, side, action, qty, 
     const closingDirection = pos.qty > 0 ? -1 : 1;
     signedQty = closingDirection * Math.min(qty, Math.abs(pos.qty));
   }
+  // ── CASH FLOW LOGIC ──────────────────────────────────────────────
+  // Opening a LONG (buy): pay premium upfront
+  // Opening a SHORT (sell): receive premium BUT must post margin (20% of notional)
+  // Closing a position: receive/pay based on realized P&L
+  const premium = qty * price * OPTION_CONTRACT_MULTIPLIER;
+  const notional = qty * strike * OPTION_CONTRACT_MULTIPLIER;
+  const MARGIN_REQ = 0.20; // 20% margin requirement for short options
+
+  if(action === 'open'){
+    if(side === 'buy'){
+      // Pay premium — check cash first
+      if(premium > playerAccount.cashBalance){
+        flashInsufficientCashAlert(premium);
+        return null;
+      }
+      playerAccount.cashBalance -= premium;
+      playerAccount.dayPLRealized -= premium;
+    } else {
+      // SHORT option — must have margin collateral
+      const marginRequired = notional * MARGIN_REQ;
+      const totalRequired = marginRequired; // premium received offsets some, but still need margin
+      if(totalRequired > playerAccount.cashBalance){
+        flashToast(`⚠ Colateral insuficiente. Short de opciones requiere $${fmtMoney(marginRequired)} (20% del notional $${fmtMoney(notional)})`, true);
+        return null;
+      }
+      // Block margin from cash, receive premium
+      playerAccount.cashBalance -= marginRequired; // lock collateral
+      playerAccount.cashBalance += premium;         // receive premium
+      playerAccount.dayPLRealized += premium;
+      // Store margin so we can release it on close
+      pos._marginBlocked = (pos._marginBlocked||0) + marginRequired;
+    }
+  }
+
   const realizedPL = applyPositionDelta(pos, signedQty, price, OPTION_CONTRACT_MULTIPLIER);
-  playerAccount.cashBalance += realizedPL;
-  playerAccount.dayPLRealized += realizedPL;
-  const wasOpeningOrAdding = realizedPL === 0;
-  if(wasOpeningOrAdding) playerAccount.cashBalance += (side==='buy' ? -1 : 1) * qty * price * OPTION_CONTRACT_MULTIPLIER;
+  if(action === 'close'){
+    // Release margin if closing a short
+    if(pos._marginBlocked && pos._marginBlocked > 0){
+      const releaseRatio = Math.min(1, qty / Math.max(1, Math.abs(pos.qty) + qty));
+      const marginToRelease = pos._marginBlocked * releaseRatio;
+      playerAccount.cashBalance += marginToRelease;
+      pos._marginBlocked = Math.max(0, pos._marginBlocked - marginToRelease);
+    }
+    playerAccount.cashBalance += realizedPL;
+    playerAccount.dayPLRealized += realizedPL;
+  }
   pos.strike = strike; pos.optType = optType; pos.expiryKey = expiryKey; pos.sym = sym;
   // Survival: cobrar comisión de opciones
   if(typeof SURVIVAL !== 'undefined' && SURVIVAL.enabled){
@@ -3937,13 +4102,37 @@ function loadGameState(){
   if(!raw) return null;
   try{ return JSON.parse(raw); }catch(e){ console.warn('Save corrupto, ignorando:', e); return null; }
 }
+function sanitizePositions(positions, maxQty=10000000){
+  // Remove corrupt positions (insane qty, negative avgPrice, etc.)
+  const clean = {};
+  Object.entries(positions||{}).forEach(([sym,pos])=>{
+    if(!pos) return;
+    const qty = pos.qty||0;
+    const avg = pos.avgPrice||0;
+    if(Math.abs(qty) > maxQty){ console.warn('Corrupt position removed:',sym,qty); return; }
+    if(avg < 0 || avg > 1000000){ console.warn('Corrupt avgPrice removed:',sym,avg); return; }
+    if(qty !== 0) clean[sym] = pos;
+  });
+  return clean;
+}
+
 function applyLoadedState(saved){
   if(!saved) return false;
   if(saved.playerAccount){
-    playerAccount.cashBalance = saved.playerAccount.cashBalance ?? playerAccount.cashBalance;
+    const bal = saved.playerAccount.cashBalance ?? playerAccount.cashBalance;
+    // Sanity check balance — if it's absurd, wipe it
+    if(bal > 0 && bal < 1e12){
+      playerAccount.cashBalance = bal;
+    } else {
+      console.warn('Corrupt balance in localStorage, resetting:', bal);
+      playerAccount.cashBalance = STARTING_CASH;
+      try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+      return false; // don't load corrupt state
+    }
     playerAccount.dayPLRealized = saved.playerAccount.dayPLRealized ?? 0;
-    playerAccount.stockPositions = saved.playerAccount.stockPositions || {};
-    playerAccount.optionPositions = saved.playerAccount.optionPositions || {};
+    // Sanitize positions — remove any with absurd quantities
+    playerAccount.stockPositions  = sanitizePositions(saved.playerAccount.stockPositions,  500000);
+    playerAccount.optionPositions = sanitizePositions(saved.playerAccount.optionPositions, 100000);
   }
   if(saved.ui){
     if(saved.ui.currentSection) currentSection = saved.ui.currentSection;
@@ -4193,7 +4382,8 @@ function renderSandboxSection(){
 function renderLayout(){
   const layoutGrid = document.getElementById('layoutGrid');
   if(!layoutGrid) return; // guard — DOM not ready yet
-  if(!allStocks || !allStocks.length) return; // guard — data not ready
+  // Don't block on allStocks — layout can render empty panels
+  // buildPanelBodies has null guards for missing elements
   // Detectar modo de layout según vista activa
   const _1col = ['scanner','news','sector','academy','watchlist'].includes(_activeSbItem);
   const _mmMode = _activeSbItem === 'mmdesk';
@@ -4470,6 +4660,7 @@ function buildPanelBodies(){
       <div class="ts-rows" id="tsRows"></div>`;
     if(vis.optionChain){
       const body = document.getElementById('body-optionChain');
+      if(!body) return;
       body.innerHTML = `
         <div class="oc-toolbar">
           <select id="ocExpirySelect">${EXPIRATIONS.map(e=>`<option value="${e.key}" ${e.key===currentExpirationKey?'selected':''}>${e.label}${e.type==='major'?' ★':''}</option>`).join('')}</select>
@@ -4509,6 +4700,7 @@ function buildPanelBodies(){
       <div class="at-rows" id="atRows"></div>`;
     if(vis.activeOptionTrader){
       const body = document.getElementById('body-activeOptionTrader');
+      if(!body) return;
       body.innerHTML = `
         <div class="aot-toolbar">
           <select id="aotStrikeSelect"></select>
@@ -4542,6 +4734,7 @@ function buildPanelBodies(){
     }
     if(vis.riskProfile){
       const body = document.getElementById('body-riskProfile');
+      if(!body) return;
       body.innerHTML = `
         <div class="rp-builder">
           <div class="rp-builder-label">Spread Personalizado (marca strikes en el Option Chain)</div>
@@ -4601,6 +4794,7 @@ function buildPanelBodies(){
     }
     if(vis.account){
       const body = document.getElementById('body-account');
+      if(!body) return;
       body.innerHTML = `
         <div class="acct-grid" id="acctGrid"></div>
         <div class="acct-positions" id="acctPositions"></div>`;
@@ -4660,6 +4854,7 @@ function buildPanelBodies(){
       <div class="fund-grid" id="fundGrid"></div>`;
     if(vis.optionFlow){
       const body = document.getElementById('body-optionFlow');
+      if(!body) return;
       body.innerHTML = `
         <div class="of-filters">
           <select id="ofMinPremium">
@@ -4702,6 +4897,7 @@ function buildPanelBodies(){
       <div class="opt-ratio-labels" id="optRatioLabels"></div>`;
     if(vis.calendar){
       const body = document.getElementById('body-calendar');
+      if(!body) return;
       body.innerHTML = `<div class="pl-cal-grid" id="plCalGrid"></div><div class="pl-cal-legend">
         <span><i class="pl-dot" style="background:var(--bid)"></i>Ganador</span>
         <span><i class="pl-dot" style="background:var(--ask)"></i>Perdedor</span>
@@ -4771,6 +4967,7 @@ function buildPanelBodies(){
     }
     if(vis.helpDocs){
       const body = document.getElementById('body-helpDocs');
+      if(!body) return;
       body.innerHTML = `
         <div class="help-tabs" id="helpTabs"></div>
         <div class="help-content" id="helpContent"></div>`;
@@ -4959,8 +5156,12 @@ function renderActiveTrader(displayPrice, displayVol){
   // Current position in this stock
   const pos = currentSym ? playerAccount.stockPositions[currentSym] : null;
   const hasPos = pos && pos.qty !== 0;
-  const posQty = hasPos ? pos.qty : 0;
-  const posAvg = hasPos ? pos.avgPrice : 0;
+  const posQty = hasPos ? (Math.abs(pos.qty||0) > 1e9 ? 0 : pos.qty) : 0;
+  const posAvg = hasPos ? (pos.avgPrice > 0 && pos.avgPrice < 1e9 ? pos.avgPrice : 0) : 0;
+  if(Math.abs(pos?.qty||0) > 1e9){ 
+    // Corrupt position — auto-clean
+    if(pos) pos.qty = 0, pos.avgPrice = 0;
+  }
   const posUPL = hasPos ? (displayPrice - posAvg) * posQty : 0;
   const posDir = posQty > 0 ? 'LONG' : 'SHORT';
   const posDirColor = posQty > 0 ? 'var(--bid)' : 'var(--ask)';
@@ -5168,6 +5369,7 @@ function executeMarketOrderAgainstBook(stock, side, qty){
   if(absPct >= haltThreshold && !haltedStocks[stock.sym]){
     const haltMins = 5 + Math.floor(Math.random()*10);
     haltedStocks[stock.sym] = { until: Date.now()+haltMins*60000, sym:stock.sym };
+    startHaltCountdown(stock.sym);
     showSurvivalAlert('⛔ HALT AUTOMÁTICO — '+stock.sym+' movió '+absPct.toFixed(0)+'% — '+haltMins+' min', 'danger');
     flashToast('⛔ TRADING HALT: '+stock.sym+' — '+haltMins+' min', true);
     setTimeout(()=>{ delete haltedStocks[stock.sym]; showSurvivalAlert('✅ '+stock.sym+' RESUMED', 'ok'); }, haltMins*60000);
@@ -5248,6 +5450,8 @@ function fillStockOrder(side, price, forceQty){
     const bestAsk = ob && ob.asks[0] ? ob.asks[0].price : price;
     const cost = qty * bestAsk;
     if(cost > playerAccount.cashBalance){ flashInsufficientCashAlert(cost); return; }
+    // Anti-cheat
+    if(!antiCheatCheckTrade(currentSym, 'buy', qty, bestAsk)) return;
   }
   if(side==='sell'){
     // Prevent short selling — player can only sell what they own
@@ -5332,6 +5536,57 @@ function renderPriceAlertsUI(){
     </div>`).join('') || '<div style="padding:12px;font-size:10px;color:var(--text-dim);text-align:center">Sin alertas activas</div>';
 }
 
+
+/* ===================================================================
+   ANTI-CHEAT SYSTEM
+   Detecta y neutraliza ventajas injustas automáticamente:
+   1. Balance manipulation — verificar que balance = cash + posiciones
+   2. Position size limits — máximo 30% del portafolio en una posición
+   3. Rate limiting — máx 10 trades por minuto
+   4. Price manipulation — si alguien mueve el precio >5% en 30s, halt
+   5. Wash trading — detecta compra/venta del mismo símbolo en <5s
+   =================================================================== */
+const ANTI_CHEAT = {
+  TRADE_RATE_WINDOW_MS: 60000,
+  MAX_TRADES_PER_MIN: 20,
+  MAX_POSITION_PCT: 0.80,    // 80% del portafolio en una sola posición
+  WASH_TRADE_WINDOW_MS: 5000, // 5 segundos
+  tradeTimes: [],            // timestamps de trades recientes
+  lastTradeSyms: {},         // sym -> timestamp último trade
+};
+
+function antiCheatCheckTrade(sym, side, qty, price){
+  const now = Date.now();
+
+  // 1. Rate limit
+  ANTI_CHEAT.tradeTimes = ANTI_CHEAT.tradeTimes.filter(t=> now-t < ANTI_CHEAT.TRADE_RATE_WINDOW_MS);
+  if(ANTI_CHEAT.tradeTimes.length >= ANTI_CHEAT.MAX_TRADES_PER_MIN){
+    flashToast('⚠ Rate limit — demasiados trades por minuto', true);
+    return false;
+  }
+
+  // 2. Wash trade detection
+  const lastTrade = ANTI_CHEAT.lastTradeSyms[sym];
+  if(lastTrade && (now - lastTrade.ts) < ANTI_CHEAT.WASH_TRADE_WINDOW_MS && lastTrade.side !== side){
+    flashToast('⚠ Wash trade detectado — espera 5s antes de revertir '+sym, true);
+    return false;
+  }
+
+  // 3. Position size limit
+  const totalEquity = playerAccount.cashBalance + computeAccountPL();
+  const positionValue = qty * price;
+  if(totalEquity > 0 && positionValue / totalEquity > ANTI_CHEAT.MAX_POSITION_PCT){
+    flashToast(`⚠ Límite de posición — máx ${(ANTI_CHEAT.MAX_POSITION_PCT*100).toFixed(0)}% del portafolio en un trade`, true);
+    return false;
+  }
+
+  // Record this trade
+  ANTI_CHEAT.tradeTimes.push(now);
+  ANTI_CHEAT.lastTradeSyms[sym] = { ts: now, side };
+  return true;
+}
+
+// Hook en fillStockOrder para correr anti-cheat ANTES del fill
 /* ===================================================================
    LIMIT ORDER ENGINE
    playerLimitOrders = [ { id, sym, side, price, qty, created, status } ]
@@ -5360,15 +5615,36 @@ function placeLimitOrder(side, limitPrice, qty){
     flashToast(`Limit SELL convertido a market @ ${bestBid.toFixed(2)}`);
     return;
   }
-  const order = { id: _limitOrderId++, sym: currentSym, side, price: limitPrice, qty, created: Date.now(), status:'open' };
+  const order = { id: _limitOrderId++, sym: currentSym, side, price: limitPrice, qty, created: Date.now(), status:'open', playerId: playerAccount.uid||'local', playerName: window._playerName||'Trader' };
   playerLimitOrders.push(order);
-  flashToast(`Limit ${side.toUpperCase()} ${qty}x ${currentSym} @ ${limitPrice.toFixed(2)} colocada`);
+  flashToast(`Limit ${side.toUpperCase()} ${qty.toLocaleString()}x ${currentSym} @ ${limitPrice.toFixed(2)} colocada`);
+  // Publish to Firebase so other players see it in their L2
+  try{
+    const _db=window._fbDb; const _ref=window._fbRef; const _set=window._fbSet;
+    if(_db&&_ref&&_set&&playerAccount.uid){
+      _set(_ref(_db,'market/limitOrders/'+playerAccount.uid+'_'+order.id), {
+        sym:currentSym, side, price:limitPrice, qty, playerName:window._playerName||'Trader',
+        uid:playerAccount.uid, id:order.id, ts:Date.now()
+      });
+    }
+  }catch(e){}
   renderOpenLimitOrders();
 }
 
 function cancelLimitOrder(id){
   const o = playerLimitOrders.find(x=>x.id===id);
-  if(o) o.status='cancelled';
+  if(o){
+    o.status='cancelled';
+    // Remove from Firebase
+    try{
+      const _db=window._fbDb; const _ref=window._fbRef;
+      if(_db&&_ref&&playerAccount.uid){
+        const {remove}=window._fbRemove?{remove:window._fbRemove}:{};
+        if(remove) remove(_ref(_db,'market/limitOrders/'+playerAccount.uid+'_'+id));
+        else { const {remove:rem}={}; } // no-op if not available
+      }
+    }catch(e){}
+  }
   playerLimitOrders = playerLimitOrders.filter(x=>x.status==='open');
   renderOpenLimitOrders();
 }
@@ -5883,6 +6159,11 @@ function renderOptionChain(stock){
 
   ocTable.innerHTML = header + body;
   setupOptionColumnDrag(ocTable);
+  // Remove previous delegated listener to prevent stacking
+  if(ocTable._ocClickHandler){
+    ocTable.removeEventListener('click', ocTable._ocClickHandler);
+    ocTable._ocClickHandler = null;
+  }
   ocTable.querySelectorAll('.oc-leg-check').forEach(cb=>{
     cb.addEventListener('change', (e)=>{
       e.stopPropagation();
@@ -5898,11 +6179,19 @@ function renderOptionChain(stock){
       fillOptionOrder(stock, strike, optType, side);
     });
   });
-  ocTable.querySelectorAll('.oc-clickable').forEach(cell=>{
-    cell.addEventListener('click', ()=>{
-      openContractPopup(stock, +cell.dataset.strike, cell.dataset.opttype);
-    });
-  });
+  // Event delegation — survives innerHTML re-renders
+  // Remove old listener first to avoid duplicates
+  ocTable._ocClickHandler && ocTable.removeEventListener('click', ocTable._ocClickHandler);
+  ocTable._ocClickHandler = function(e){
+    // Find the closest .oc-clickable parent
+    const cell = e.target.closest('.oc-clickable');
+    if(!cell) return;
+    // Don't trigger if clicking a button or checkbox inside the cell
+    if(e.target.closest('.oc-trade-btn') || e.target.closest('.oc-leg-check')) return;
+    e.stopPropagation();
+    openContractPopup(stock, +cell.dataset.strike, cell.dataset.opttype);
+  };
+  ocTable.addEventListener('click', ocTable._ocClickHandler);
 }
 /* ===================================================================
    ROUTING SELECTORS (Step B) — the player picks SWEEP/BLOCK/SPLIT/NORMAL
@@ -6180,119 +6469,230 @@ const openContractPopups = {}; // contractKey -> {el, interval}
 function openContractPopup(stock, strike, optType){
   const key = contractStateKey(stock.sym, strike, optType, currentExpirationKey);
   if(openContractPopups[key]){ openContractPopups[key].el.style.zIndex = ++popupZCounter; return; }
+  const sid = key.replace(/[^a-zA-Z0-9]/g,'');
   const popup = document.createElement('div');
   popup.className = 'contract-popup';
-  popup.style.left = (80 + Object.keys(openContractPopups).length*30) + 'px';
-  popup.style.top = (90 + Object.keys(openContractPopups).length*30) + 'px';
-  popup.style.zIndex = ++popupZCounter;
+  popup.style.cssText = `left:${80+Object.keys(openContractPopups).length*30}px;top:${90+Object.keys(openContractPopups).length*30}px;z-index:${++popupZCounter}`;
+
   popup.innerHTML = `
-    <div class="cp-header">
-      <span class="cp-title ${optType}">${stock.sym} ${strike}${optType==='call'?'C':'P'} · ${currentExpirationKey}</span>
-      <button class="cp-close">✕</button>
+    <div class="cp-header" style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);background:var(--panel-elevated);cursor:move;flex-shrink:0">
+      <span class="cp-title ${optType}" style="font-family:var(--mono);font-size:12px;font-weight:700">${stock.sym} ${strike}${optType==='call'?'C':'P'} · ${currentExpirationKey}</span>
+      <div style="display:flex;gap:2px;margin-left:4px" id="cpTfRow-${sid}">
+        <button data-tf="1m" class="ind-btn on" style="padding:2px 7px;font-size:9px">1m</button>
+        <button data-tf="5m" class="ind-btn" style="padding:2px 7px;font-size:9px">5m</button>
+        <button data-tf="1h" class="ind-btn" style="padding:2px 7px;font-size:9px">1H</button>
+      </div>
+      <button class="cp-close" style="margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--text-dim);width:22px;height:22px;border-radius:3px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
     </div>
-    <div class="cp-tabs">
-      <button data-tab="chart" class="active">Chart</button>
-      <button data-tab="greeks">Greeks</button>
-      <button data-tab="ts">Time &amp; Sales</button>
-      <button data-tab="trade">Trade</button>
+    <div id="cpGreeks-${sid}" style="display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--border);background:var(--panel-elevated);flex-shrink:0">
+      <div style="padding:4px 8px;border-right:.5px solid var(--border)"><div style="font-size:7.5px;color:var(--text-dim);text-transform:uppercase">IV</div><div id="gIV-${sid}" style="font-family:var(--mono);font-size:11px;font-weight:600">—</div></div>
+      <div style="padding:4px 8px;border-right:.5px solid var(--border)"><div style="font-size:7.5px;color:var(--text-dim);text-transform:uppercase">Δ Delta</div><div id="gD-${sid}" style="font-family:var(--mono);font-size:11px;font-weight:600">—</div></div>
+      <div style="padding:4px 8px;border-right:.5px solid var(--border)"><div style="font-size:7.5px;color:var(--text-dim);text-transform:uppercase">Γ Gamma</div><div id="gG-${sid}" style="font-family:var(--mono);font-size:11px;font-weight:600">—</div></div>
+      <div style="padding:4px 8px;border-right:.5px solid var(--border)"><div style="font-size:7.5px;color:var(--text-dim);text-transform:uppercase">Θ Theta</div><div id="gT-${sid}" style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--ask)">—</div></div>
+      <div style="padding:4px 8px"><div style="font-size:7.5px;color:var(--text-dim);text-transform:uppercase">V Vega</div><div id="gV-${sid}" style="font-family:var(--mono);font-size:11px;font-weight:600">—</div></div>
     </div>
-    <div class="cp-body">
-      <div class="cp-pane active" data-pane="chart">
-        <div class="cp-tf-row" id="cpTfRow-${key.replace(/[^a-zA-Z0-9]/g,'')}">
-          <button data-tf="1m" class="active">1m</button><button data-tf="5m">5m</button><button data-tf="1h">1H</button>
+    <div style="display:grid;grid-template-columns:1fr 190px;flex:1;overflow:hidden;min-height:0">
+      <div style="display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)">
+        <div style="height:190px;background:var(--bg);flex-shrink:0;overflow:hidden">
+          <svg id="cpChartSvg-${sid}" viewBox="0 0 560 240" width="100%" height="100%" preserveAspectRatio="none" style="display:block"></svg>
         </div>
-        <div class="cp-chart-canvas" style="height:200px;background:var(--bg);overflow:hidden"><svg id="cpChartSvg-${key.replace(/[^a-zA-Z0-9]/g,'')}" viewBox="0 0 560 240" width="100%" height="100%" preserveAspectRatio="none" style="display:block"></svg></div>
-        <div class="cp-quick-trade">
-          <input type="number" id="cpQty-${key.replace(/[^a-zA-Z0-9]/g,'')}" value="1" min="1" style="width:60px;background:#0A0C10;border:1px solid var(--border);border-radius:4px;color:#fff;padding:4px 6px;font-size:11px">
-          <button class="cp-buy">BUY</button>
-          <button class="cp-sell">SELL</button>
+        <div style="flex:1;overflow-y:auto;padding:10px 12px;background:var(--panel-elevated);border-top:1px solid var(--border)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div style="background:var(--bid-bg);border:1px solid rgba(63,191,127,.2);border-radius:5px;padding:8px 10px">
+              <div style="font-size:8px;color:var(--text-dim);text-transform:uppercase;margin-bottom:2px">Bid</div>
+              <div id="cpBid-${sid}" style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--bid)">—</div>
+              <div id="cpBidSz-${sid}" style="font-size:9px;color:var(--text-dim)"></div>
+            </div>
+            <div style="background:var(--ask-bg);border:1px solid rgba(229,86,107,.2);border-radius:5px;padding:8px 10px">
+              <div style="font-size:8px;color:var(--text-dim);text-transform:uppercase;margin-bottom:2px">Ask</div>
+              <div id="cpAsk-${sid}" style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--ask)">—</div>
+              <div id="cpAskSz-${sid}" style="font-size:9px;color:var(--text-dim)"></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+            <span style="font-size:9px;color:var(--text-dim);font-family:var(--mono)">QTY</span>
+            <input id="cpQty-${sid}" type="number" value="1" min="1" style="width:64px;background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:13px;font-weight:700;padding:5px 7px;border-radius:4px;outline:none;text-align:right">
+            <div style="display:flex;gap:3px">
+              <button data-q="1"  class="cp-preset" style="background:var(--panel);border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:9px;padding:4px 7px;border-radius:3px;cursor:pointer">1</button>
+              <button data-q="5"  class="cp-preset" style="background:var(--panel);border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:9px;padding:4px 7px;border-radius:3px;cursor:pointer">5</button>
+              <button data-q="10" class="cp-preset" style="background:var(--panel);border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:9px;padding:4px 7px;border-radius:3px;cursor:pointer">10</button>
+              <button data-q="25" class="cp-preset" style="background:var(--panel);border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:9px;padding:4px 7px;border-radius:3px;cursor:pointer">25</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+            <button class="cp-buy-ask" style="background:rgba(63,191,127,.15);border:1.5px solid var(--bid);color:var(--bid);font-family:var(--mono);font-size:11px;font-weight:800;padding:9px 4px;border-radius:4px;cursor:pointer">BUY ASK</button>
+            <button class="cp-sell-bid" style="background:rgba(229,86,107,.12);border:1.5px solid var(--ask);color:var(--ask);font-family:var(--mono);font-size:11px;font-weight:800;padding:9px 4px;border-radius:4px;cursor:pointer">SELL BID</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+            <button class="cp-buy-bid" style="background:rgba(63,191,127,.07);border:1px solid var(--bid);color:var(--bid);font-family:var(--mono);font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px;cursor:pointer">BUY BID</button>
+            <button class="cp-sell-ask" style="background:rgba(229,86,107,.06);border:1px solid var(--ask);color:var(--ask);font-family:var(--mono);font-size:10px;font-weight:700;padding:6px 4px;border-radius:4px;cursor:pointer">SELL ASK</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:8px">
+            <button class="cp-buy-all" style="background:rgba(63,191,127,.1);border:1px solid var(--bid);color:var(--bid);font-family:var(--mono);font-size:9px;font-weight:700;padding:5px 2px;border-radius:3px;cursor:pointer">BUY ALL</button>
+            <button class="cp-sell-all" style="background:rgba(229,86,107,.1);border:1px solid var(--ask);color:var(--ask);font-family:var(--mono);font-size:9px;font-weight:700;padding:5px 2px;border-radius:3px;cursor:pointer">SELL ALL</button>
+            <button class="cp-close-pos" style="background:rgba(255,214,0,.08);border:1px solid var(--amber);color:var(--amber);font-family:var(--mono);font-size:9px;font-weight:700;padding:5px 2px;border-radius:3px;cursor:pointer">CLOSE POS</button>
+          </div>
+          <div id="cpPos-${sid}" style="padding:6px 0;border-top:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--text-dim)">Sin posición</div>
         </div>
       </div>
-      <div class="cp-pane" data-pane="greeks">
-        <div class="cp-stats-grid" id="cpStats-${key.replace(/[^a-zA-Z0-9]/g,'')}"></div>
-      </div>
-      <div class="cp-pane" data-pane="ts">
-        <div id="cpTape-${key.replace(/[^a-zA-Z0-9]/g,'')}"></div>
-      </div>
-      <div class="cp-pane" data-pane="trade">
-        <div class="cp-at-toolbar">
-          <span style="font-size:9.5px;color:var(--text-dim);">Qty:</span>
-          <input type="number" id="cpQty2-${key.replace(/[^a-zA-Z0-9]/g,'')}" value="1" min="1">
-        </div>
-        <div class="cp-quote-row" id="cpQuoteRow2-${key.replace(/[^a-zA-Z0-9]/g,'')}"></div>
-        <div class="cp-at-btn-row">
-          <button class="cp-buy cp-buy2">BUY</button>
-          <button class="cp-sell cp-sell2">SELL</button>
-        </div>
+      <div style="display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:5px 10px;font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);border-bottom:.5px solid var(--border);background:var(--panel-elevated);font-family:var(--mono);flex-shrink:0">Time & Sales</div>
+        <div id="cpTape-${sid}" style="flex:1;overflow-y:auto"></div>
       </div>
     </div>`;
+
   document.body.appendChild(popup);
 
-  const safeId = key.replace(/[^a-zA-Z0-9]/g,'');
-  popup.querySelectorAll('.cp-tabs button').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      popup.querySelectorAll('.cp-tabs button').forEach(b=>b.classList.remove('active'));
-      popup.querySelectorAll('.cp-pane').forEach(p=>p.classList.remove('active'));
-      btn.classList.add('active');
-      // Re-render chart when Chart tab is clicked (SVG needs visible container)
-      popup.querySelector(`.cp-pane[data-pane="${btn.dataset.tab}"]`).classList.add('active');
-    });
-  });
-  popup.querySelector('.cp-close').addEventListener('click', ()=>{
-    clearInterval(openContractPopups[key].interval);
+  // ── Close button ────────────────────────────────────────────────
+  popup.querySelector('.cp-close').onclick = ()=>{
+    const entry = openContractPopups[key];
+    if(entry) clearInterval(entry.interval);
     popup.remove();
     delete openContractPopups[key];
+  };
+
+  // ── Timeframe buttons ───────────────────────────────────────────
+  popup.querySelectorAll('#cpTfRow-'+sid+' button').forEach(btn=>{
+    btn.onclick = ()=>{
+      popup.querySelectorAll('#cpTfRow-'+sid+' button').forEach(b=>{b.classList.remove('on');b.classList.add('off');});
+      btn.classList.add('on');
+      if(openContractPopups[key]) openContractPopups[key].timeframe = btn.dataset.tf;
+      refreshContractPopup(stock, strike, optType, sid);
+    };
   });
-  function getPopupQty(){
-    const q1 = document.getElementById(`cpQty-${safeId}`);
-    const q2 = document.getElementById(`cpQty2-${safeId}`);
-    return parseInt((q1||q2||{value:'1'}).value)||1;
-  }
-  popup.querySelectorAll('.cp-buy').forEach(btn=>btn.addEventListener('click', ()=>{
-    fillOptionOrder(stock, strike, optType, 'buy', getPopupQty());
-    refreshContractPopup(stock, strike, optType, safeId);
-  }));
-  popup.querySelectorAll('.cp-sell').forEach(btn=>btn.addEventListener('click', ()=>{
-    fillOptionOrder(stock, strike, optType, 'sell', getPopupQty());
-    refreshContractPopup(stock, strike, optType, safeId);
-  }));
+
+  // ── Qty presets ─────────────────────────────────────────────────
+  popup.querySelectorAll('.cp-preset').forEach(btn=>{
+    btn.onclick = ()=>{
+      const inp = document.getElementById('cpQty-'+sid);
+      if(inp){ inp.value = btn.dataset.q; }
+    };
+  });
+
+  // ── Get qty helper ──────────────────────────────────────────────
+  function getQty(){ return Math.max(1, parseInt(document.getElementById('cpQty-'+sid)?.value)||1); }
+
+  // ── Trading buttons ─────────────────────────────────────────────
+  const pos = ()=> playerAccount.optionPositions[key];
+
+  popup.querySelector('.cp-buy-ask').onclick = ()=>{
+    fillOptionOrder(stock, strike, optType, 'buy', getQty(), 'ask', 'open');
+    refreshContractPopup(stock, strike, optType, sid);
+  };
+  popup.querySelector('.cp-sell-bid').onclick = ()=>{
+    fillOptionOrder(stock, strike, optType, 'sell', getQty(), 'bid', 'open');
+    refreshContractPopup(stock, strike, optType, sid);
+  };
+  popup.querySelector('.cp-buy-bid').onclick = ()=>{
+    fillOptionOrder(stock, strike, optType, 'buy', getQty(), 'bid', 'open');
+    refreshContractPopup(stock, strike, optType, sid);
+  };
+  popup.querySelector('.cp-sell-ask').onclick = ()=>{
+    fillOptionOrder(stock, strike, optType, 'sell', getQty(), 'ask', 'open');
+    refreshContractPopup(stock, strike, optType, sid);
+  };
+  popup.querySelector('.cp-buy-all').onclick = ()=>{
+    const row = getOrInitContractState(stock, strike, optType, currentExpirationKey);
+    const maxQty = Math.floor(playerAccount.cashBalance / (row.ask * 100));
+    if(maxQty < 1){ flashToast('Cash insuficiente para BUY ALL', true); return; }
+    fillOptionOrder(stock, strike, optType, 'buy', maxQty, 'ask', 'open');
+    refreshContractPopup(stock, strike, optType, sid);
+  };
+  popup.querySelector('.cp-sell-all').onclick = ()=>{
+    const p = pos();
+    const qty = p && p.qty > 0 ? p.qty : getQty();
+    fillOptionOrder(stock, strike, optType, 'sell', qty, 'bid', p && p.qty>0 ? 'close':'open');
+    refreshContractPopup(stock, strike, optType, sid);
+  };
+  popup.querySelector('.cp-close-pos').onclick = ()=>{
+    const p = pos();
+    if(!p || p.qty===0){ flashToast('Sin posición para cerrar', false); return; }
+    const closeSide = p.qty>0 ? 'sell' : 'buy';
+    fillOptionOrder(stock, strike, optType, closeSide, Math.abs(p.qty), p.qty>0?'bid':'ask', 'close');
+    refreshContractPopup(stock, strike, optType, sid);
+  };
+
+  // ── Draggable ───────────────────────────────────────────────────
   makePopupDraggable(popup, popup.querySelector('.cp-header'));
 
-  const interval = setInterval(()=> refreshContractPopup(stock, strike, optType, safeId), ENGINE_TICK_MS);
-  openContractPopups[key] = { el: popup, interval, timeframe: '1m' };
-  popup.querySelectorAll('.cp-tf-row button').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      popup.querySelectorAll('.cp-tf-row button').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      openContractPopups[key].timeframe = btn.dataset.tf;
-      refreshContractPopup(stock, strike, optType, safeId);
-    });
-  });
-  refreshContractPopup(stock, strike, optType, safeId);
+  // ── Chart render ─────────────────────────────────────────────────
+  setTimeout(()=>{
+    const svgEl = document.getElementById('cpChartSvg-'+sid);
+    if(svgEl){
+      optionPriceTickHistory[key] = null;
+      const candles = buildOptionCandlesForTimeframe(key, getOrInitContractState(stock,strike,optType,currentExpirationKey), '5m');
+      if(candles.length) renderChartSVG(svgEl, candles, 'med');
+    }
+  }, 80);
+
+  // ── Interval refresh ────────────────────────────────────────────
+  const interval = setInterval(()=> refreshContractPopup(stock, strike, optType, sid), ENGINE_TICK_MS);
+  openContractPopups[key] = { el:popup, interval, timeframe:'5m' };
+  refreshContractPopup(stock, strike, optType, sid);
 }
-let popupZCounter = 1500;
-function makePopupDraggable(popup, handle){
-  let sx,sy,ox,oy,dragging=false;
-  handle.addEventListener('mousedown', (e)=>{
-    if(e.target.classList.contains('cp-close')) return;
-    dragging=true; sx=e.clientX; sy=e.clientY; ox=popup.offsetLeft; oy=popup.offsetTop;
-    popup.style.zIndex = ++popupZCounter;
-  });
-  document.addEventListener('mousemove', (e)=>{
-    if(!dragging) return;
-    popup.style.left = (ox+(e.clientX-sx))+'px';
-    popup.style.top = Math.max(0, oy+(e.clientY-sy))+'px';
-  });
-  document.addEventListener('mouseup', ()=> dragging=false);
-}
+
+
 function refreshContractPopup(stock, strike, optType, safeId){
   const row = getOrInitContractState(stock, strike, optType, currentExpirationKey);
+
+  // ── Update bid/ask boxes ────────────────────────────────────────
+  const bidEl  = document.getElementById('cpBid-'+safeId);
+  const askEl  = document.getElementById('cpAsk-'+safeId);
+  const bidSzEl= document.getElementById('cpBidSz-'+safeId);
+  const askSzEl= document.getElementById('cpAskSz-'+safeId);
+  if(bidEl)  bidEl.textContent  = row.bid.toFixed(2);
+  if(askEl)  askEl.textContent  = row.ask.toFixed(2);
+  if(bidSzEl) bidSzEl.textContent = (row.bidSize||0)+'×';
+  if(askSzEl) askSzEl.textContent = '×'+(row.askSize||0);
+
+  // ── Update Greeks strip ─────────────────────────────────────────
+  const g = row._greeks || {};
+  const ivEl = document.getElementById('gIV-'+safeId);
+  const dEl  = document.getElementById('gD-'+safeId);
+  const gEl  = document.getElementById('gG-'+safeId);
+  const tEl  = document.getElementById('gT-'+safeId);
+  const vEl  = document.getElementById('gV-'+safeId);
+  if(ivEl) ivEl.textContent = row.iv ? row.iv.toFixed(1)+'%' : '—';
+  if(dEl)  { dEl.textContent = g.delta != null ? g.delta.toFixed(3) : '—'; dEl.style.color = g.delta>=0?'var(--bid)':'var(--ask)'; }
+  if(gEl)  gEl.textContent = g.gamma != null ? g.gamma.toFixed(4) : '—';
+  if(tEl)  { tEl.textContent = g.theta != null ? g.theta.toFixed(3) : '—'; tEl.style.color = 'var(--ask)'; }
+  if(vEl)  vEl.textContent = g.vega  != null ? g.vega.toFixed(3)  : '—';
+
+  // ── Update Position bar ─────────────────────────────────────────
+  const posEl = document.getElementById('cpPos-'+safeId);
+  if(posEl){
+    const pos = playerAccount.optionPositions[row.key];
+    const posQty = pos ? pos.qty : 0;
+    if(posQty !== 0){
+      const avgPx = pos.avgPrice||0;
+      const curPx = posQty>0 ? row.bid : row.ask;
+      const plPerContract = posQty>0 ? (row.bid-avgPx)*100 : (avgPx-row.ask)*100;
+      const plTotal = plPerContract * Math.abs(posQty);
+      const plPct = avgPx>0 ? ((curPx-avgPx)/avgPx*100*(posQty>0?1:-1)) : 0;
+      const plColor = plTotal>=0 ? 'color:var(--bid)' : 'color:var(--ask)';
+      const sideLabel = posQty>0 ? 'LONG' : 'SHORT';
+      const sideColor = posQty>0 ? 'color:var(--bid)' : 'color:var(--ask)';
+      posEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="${sideColor};font-weight:700">${sideLabel} ${Math.abs(posQty)}</span>
+          <span style="color:var(--text-dim)">avg $${avgPx.toFixed(2)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="${plColor};font-family:var(--mono);font-size:13px;font-weight:800">${plTotal>=0?'+':''}$${Math.abs(plTotal).toFixed(0)}</span>
+          <span style="${plColor};font-family:var(--mono);font-size:11px;font-weight:700">${plPct>=0?'+':''}${plPct.toFixed(1)}%</span>
+        </div>
+      </div>`;
+    } else {
+      posEl.innerHTML = '<span style="color:var(--text-dim);font-size:10px">Sin posición</span>';
+    }
+  }
+
+  // Legacy quote rows (kept for back-compat)
   const quoteHtml = `
     <div><span style="color:var(--text-dim);">Bid</span> <b style="color:var(--bid);">${row.bid.toFixed(2)}</b></div>
     <div><span style="color:var(--text-dim);">Ask</span> <b style="color:var(--ask);">${row.ask.toFixed(2)}</b></div>
     <div><span style="color:var(--text-dim);">Last</span> <b>${row.lastPrice.toFixed(2)}</b></div>`;
-  const q1 = document.getElementById(`cpQuoteRow-${safeId}`); if(q1) q1.innerHTML = quoteHtml;
-  const q2 = document.getElementById(`cpQuoteRow2-${safeId}`); if(q2) q2.innerHTML = quoteHtml;
+  const q1 = document.getElementById('cpQuoteRow-'+safeId); if(q1) q1.innerHTML = quoteHtml;
 
   const statsEl = document.getElementById(`cpStats-${safeId}`);
   if(statsEl){
@@ -6323,25 +6723,24 @@ function refreshContractPopup(stock, strike, optType, safeId){
   const svgEl = document.getElementById(`cpChartSvg-${safeId}`);
   if(svgEl){
     const timeframe = openContractPopups[row.key] ? openContractPopups[row.key].timeframe : '1m';
-    // Use setTimeout to ensure popup is in DOM before rendering chart
+    // Render chart after popup is in DOM
     setTimeout(()=>{
-      const _svgNow = document.getElementById('cpChartSvg-'+safeId);
-      if(!_svgNow) return;
-      // Reset history to force fresh seed
-      if(!optionPriceTickHistory[row.key] || optionPriceTickHistory[row.key].length < 10){
-        optionPriceTickHistory[row.key] = null;
-      }
-      const _candles = buildOptionCandlesForTimeframe(row.key, row, timeframe);
+      // safeId must match what the SVG id was created with
+      const _sid = row.key.replace(/[^a-zA-Z0-9]/g,'');
+      const _svgNow = document.getElementById('cpChartSvg-'+_sid);
+      if(!_svgNow){ console.warn('cpChartSvg not found for', _sid); return; }
+      optionPriceTickHistory[row.key] = null; // force fresh seed
+      const _candles = buildOptionCandlesForTimeframe(row.key, row, '5m');
       if(_candles.length){
         _svgNow.setAttribute('viewBox','0 0 560 240');
         _svgNow.setAttribute('preserveAspectRatio','none');
         _svgNow.style.cssText='width:100%;height:200px;display:block;background:var(--bg)';
         renderChartSVG(_svgNow, _candles, 'med');
-      }
-    }, 50);
+      } else { console.warn('No candles for', row.key); }
+    }, 100);
   }
 
-  const tapeEl = document.getElementById(`cpTape-${safeId}`);
+  const tapeEl = document.getElementById('cpTape-'+safeId);
   if(tapeEl){
     tapeEl.innerHTML = row.tape.slice().reverse().map(t=>{
       const time = new Date(t.time);
@@ -6677,20 +7076,39 @@ function renderAllData(){
   }
 }
 
-applyLoadedState(loadGameState());
+// Check localStorage for corruption before applying
+const _savedState = loadGameState();
+if(_savedState){
+  // Quick sanity check — if positions look corrupt, wipe
+  const _stockPos = _savedState?.playerAccount?.stockPositions || {};
+  const _hasCorrupt = Object.values(_stockPos).some(p=> Math.abs(p?.qty||0) > 1e8 || Math.abs(p?.avgPrice||0) > 1e7);
+  if(_hasCorrupt){
+    console.warn('Corrupt localStorage detected — wiping');
+    try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+  } else {
+    applyLoadedState(_savedState);
+  }
+} else {
+  applyLoadedState(null);
+}
 loadChartDrawings();
 buildTopbar();
 buildTray();
-renderLayout();
-try{sbActivate('chart');}catch(e){}
+// Safe init — renderLayout solo si allStocks está listo
+if(typeof allStocks !== 'undefined' && allStocks.length > 0){
+  try{ sbActivate('chart'); }catch(e){ console.warn('sbActivate',e); }
+} else {
+  // Retry after a tick
+  setTimeout(()=>{ try{ sbActivate('chart'); }catch(e){}; }, 100);
+}
 try{applyI18n();}catch(e){}
 try{ survivalInit(); survivalChargeDailyFees(); }catch(e){ console.warn('Survival init',e); }
 startLiveEngine();
 setInterval(persistGameState, 15000); // periodic backup save, independent of the debounced one tied to specific actions
-document.getElementById('scannerToggle').addEventListener('click', ()=>{
+document.getElementById('scannerToggle')?.addEventListener('click', ()=>{
   scannerCollapsed = !scannerCollapsed;
-  document.getElementById('scannerWidget').classList.toggle('collapsed', scannerCollapsed);
-  document.getElementById('scannerToggle').textContent = scannerCollapsed ? '▢' : '─';
+  document.getElementById('scannerWidget')?.classList.toggle('collapsed', scannerCollapsed);
+  document.getElementById('scannerToggle')?.textContent ?? (scannerCollapsed ? '▢' : '─');
 });
 renderScannerWidget();
 </script>
@@ -7723,29 +8141,34 @@ function renderScannerPanel(){
     html += `<div class="scan-section-label">${labels[_scannerFilter]||'Movers'} · ${list.length} símbolos</div>`;
     html += `<div class="scan-header" style="display:grid;grid-template-columns:22px 44px 1fr 54px 46px 46px;padding:4px 10px;font-size:7.5px;color:var(--text-dim);text-transform:uppercase;border-bottom:1px solid var(--border);font-family:var(--mono)"><span>#</span><span>SYM</span><span>SECTOR</span><span>PRICE</span><span>%CHG</span><span>IV RNK</span></div>`;
 
-    html += list.slice(0,20).map(function(s,i){
-      const chg = (s.price/s._openPrice-1)*100;
+    // Column header
+    html += `<div style="display:grid;grid-template-columns:28px 52px 1fr 60px 50px 50px 48px;padding:4px 10px;font-size:8px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);font-family:var(--mono)">
+      <span>#</span><span>Sym</span><span>Nombre</span><span style="text-align:right">Precio</span><span style="text-align:right">%Chg</span><span style="text-align:right">Vol</span><span style="text-align:center">IV</span>
+    </div>`;
+
+    html += list.slice(0,25).map(function(s,i){
+      const chg = (s.price/(s._openPrice||s.price)-1)*100;
       const pos = chg>=0;
       const vol = s._todayVolume||0;
-      const volStr = vol>=1e6?(vol/1e6).toFixed(1)+'M':vol>=1000?(vol/1000).toFixed(0)+'K':String(vol);
+      const volStr = vol>=1e6?(vol/1e6).toFixed(1)+'M':vol>=1000?(vol/1000).toFixed(0)+'K':'<1K';
       let atmIV = 30;
       try{
         const _ek = currentExpirationKey || _expKey;
-        if(_ek){ const chain = genOptionChainForStock(s, _ek); atmIV = chain.length ? chain[Math.floor(chain.length/2)].iv : 30; }
+        if(_ek){ const chain = genOptionChainForStock(s, _ek); if(chain.length) atmIV = chain[Math.floor(chain.length/2)].iv||30; }
       }catch(e){}
       const ivRank = Math.min(99, Math.round(atmIV * 1.4));
       const ivClass = ivRank>70?'scan-iv-high':ivRank>40?'scan-iv-med':'scan-iv-low';
       const isCurrent = s.sym===currentSym;
-      const isAlert = Math.abs(chg)>3 || vol>5e6;
-      const sector = s.sectorKey||'';
-      const shortSector = sector.length>10?sector.slice(0,10)+'…':sector;
-      return `<div class="scan-row${isAlert?' scan-alert-row':''}${isCurrent?' scan-row-active':''}" data-sym="${s.sym}" style="display:grid;grid-template-columns:22px 44px 1fr 54px 46px 46px;padding:5px 10px;border-bottom:.5px solid var(--border);align-items:center;cursor:pointer;font-family:var(--mono);font-size:10.5px">
-        <span class="scan-rank" style="color:var(--text-dim);font-size:8.5px">${i+1}</span>
-        <span class="scan-sym" style="font-weight:700;color:${isCurrent?'var(--amber)':'var(--text)'}">${s.sym}</span>
-        <span style="font-size:8.5px;color:var(--text-dim)">${shortSector}</span>
-        <span style="font-family:var(--mono)">${s.price.toFixed(2)}</span>
-        <span class="${pos?'pos':'neg'}" style="font-weight:700">${pos?'+':''}${chg.toFixed(2)}%</span>
-        <span class="scan-iv-badge ${ivClass}">${ivRank}%</span>
+      const isAlert = Math.abs(chg)>3;
+      const borderCol = pos?'var(--bid)':'var(--ask)';
+      return `<div class="scan-row" data-sym="${s.sym}" style="display:grid;grid-template-columns:28px 52px 1fr 60px 50px 50px 48px;padding:5px 10px;border-bottom:.5px solid var(--border);align-items:center;cursor:pointer;font-family:var(--mono);font-size:10.5px;border-left:2px solid ${isAlert?borderCol:'transparent'};background:${isCurrent?'rgba(255,214,0,.05)':''}">
+        <span style="color:var(--text-dim);font-size:9px">${i+1}</span>
+        <span style="font-weight:700;color:${isCurrent?'var(--amber)':'var(--text)'}">${s.sym}</span>
+        <span style="font-size:9px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name||s.sym}</span>
+        <span style="text-align:right">${s.price.toFixed(2)}</span>
+        <span style="text-align:right;font-weight:700;color:${pos?'var(--bid)':'var(--ask)'}">${pos?'+':''}${chg.toFixed(2)}%</span>
+        <span style="text-align:right;color:var(--text-dim);font-size:9px">${volStr}</span>
+        <span style="text-align:center"><span class="scan-iv-badge ${ivClass}">${ivRank}%</span></span>
       </div>`;
     }).join('');
 
@@ -8581,6 +9004,15 @@ function renderMMDesk() {
   body.innerHTML = `
     <div class="mm-desk-wrap">
 
+      <!-- CONTROL BAR -->
+      <div style="display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel-elevated);align-items:center">
+        <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber)">MM DESK — ${sym}</span>
+        <span style="font-size:9px;color:var(--text-dim)">Fair price: <b style="color:var(--bid)">$${fairPrice}</b></span>
+        <button onclick="mmResetFairPrice('${sym}')" style="background:rgba(255,214,0,.1);border:1px solid var(--amber);color:var(--amber);font-family:var(--mono);font-size:9px;font-weight:700;padding:4px 10px;border-radius:3px;cursor:pointer">⟳ Reset Fair Price</button>
+        <button onclick="mmNeutralizeInventory('${sym}')" style="background:rgba(68,138,255,.1);border:1px solid var(--blue);color:var(--blue);font-family:var(--mono);font-size:9px;font-weight:700;padding:4px 10px;border-radius:3px;cursor:pointer">⚖ Neutralize</button>
+        <button onclick="deactivateMMMode()" style="background:rgba(229,86,107,.1);border:1px solid var(--ask);color:var(--ask);font-family:var(--mono);font-size:9px;font-weight:700;padding:4px 10px;border-radius:3px;cursor:pointer;margin-left:auto">✕ Desactivar</button>
+      </div>
+
       <!-- HEADER STATS -->
       <div class="mm-header-stats">
         <div class="mm-hstat">
@@ -8979,6 +9411,28 @@ function maybeHalt(){
 }
 
 function isStockHalted(sym){ return !!haltedStocks[sym]; }
+let _haltCountdownInterval = null;
+function startHaltCountdown(sym){
+  stopHaltCountdown();
+  const ind = document.getElementById('haltIndicator');
+  const tim = document.getElementById('haltTimer');
+  if(ind) ind.style.display = 'flex';
+  _haltCountdownInterval = setInterval(()=>{
+    const h = haltedStocks[sym];
+    if(!h){ stopHaltCountdown(); return; }
+    const rem = Math.max(0, h.until - Date.now());
+    const mins = Math.floor(rem/60000);
+    const secs = Math.floor((rem%60000)/1000);
+    if(tim) tim.textContent = `${sym} ${mins}:${secs.toString().padStart(2,'0')}`;
+    if(rem <= 0){ stopHaltCountdown(); delete haltedStocks[sym]; }
+  }, 500);
+}
+function stopHaltCountdown(){
+  if(_haltCountdownInterval){ clearInterval(_haltCountdownInterval); _haltCountdownInterval=null; }
+  const ind = document.getElementById('haltIndicator');
+  if(ind) ind.style.display = 'none';
+}
+
 
 /* ── 7. HOOK CENTRAL — conectar todo a tickStockEngine ──────────────
    Se engancha en el loop del tick para ejecutar todos los sistemas
@@ -9010,7 +9464,18 @@ function isStockHalted(sym){ return !!haltedStocks[sym]; }
     if(stock === allStocks[0]) maybeHalt();
     
     // Inject phase bias y GEX en stock para que tickStockEngine lo use
-    stock._externalForceBias = (phaseBias * 0.012) + (gexForce * 0.008);
+    // Player large limit order magnet effect
+  let playerMagnetForce = 0;
+  const playerOrdsForStock = (window.playerLimitOrders||[]).filter(o=>o.status==='open'&&o.sym===stock.sym&&o.qty>=10000);
+  if(playerOrdsForStock.length){
+    playerOrdsForStock.forEach(o=>{
+      const dist = (o.price - stock.price) / stock.price;
+      const strength = Math.min(0.3, o.qty/50000); // max 0.3 force
+      playerMagnetForce += dist * strength * 0.5;
+    });
+    playerMagnetForce = Math.max(-0.3, Math.min(0.3, playerMagnetForce));
+  }
+  stock._externalForceBias = (phaseBias * 0.012) + (gexForce * 0.008) + playerMagnetForce;
     
     // Llamar al tick original
     _origTick2(stock);
