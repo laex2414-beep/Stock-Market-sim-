@@ -21,7 +21,7 @@
   .market-pulse{ height:5px; width:100%; background:var(--panel); position:relative; overflow:hidden; }
   .market-pulse-fill{ position:absolute; top:0; bottom:0; left:50%; width:38%; background:linear-gradient(90deg, transparent, var(--bid)); }
 
-  .app-shell{ display:flex; height:calc(100vh - 5px); margin-top:28px; }
+  .app-shell{ display:flex; height:calc(100vh - 5px); }
 
   /* ===== SIDEBAR (Trading / Investing switcher) ===== */
   .sidebar{
@@ -1021,46 +1021,6 @@
     <div class="sb-item" id="sb-mmdesk" onclick="sbActivate('mmdesk')" title="MM Desk"><span class="sb-icon">🏦</span><span class="sb-lbl">MM</span></div>
   </div>
 
-  <!-- SURVIVAL HUD -->
-  <div class="survival-hud" id="survivalHud">
-    <div class="shud-item">
-      <span class="shud-k" data-i18n="surv.riskScore">Risk Score</span>
-      <div class="risk-bar"><div class="risk-bar-fill" id="riskBarFill" style="width:100%;background:var(--bid)"></div></div>
-      <span class="shud-v" id="riskScoreVal" style="color:var(--bid)">100</span>
-    </div>
-    <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k" data-i18n="surv.seatFee">Seat Fee</span><span class="shud-v" style="color:var(--ask)" id="seatFeeVal">-$500/día</span></div>
-    <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k" data-i18n="surv.drawdown">Drawdown</span><span class="shud-v" id="drawdownVal">0.00%</span></div>
-    <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k">PDT</span><span class="shud-v pdt-badge ok" id="pdtBadge">OK</span></div>
-    <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k" data-i18n="surv.commission">Trades hoy</span><span class="shud-v" id="dayTradesVal">0 / ∞</span></div>
-    <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k" data-i18n="surv.commission">Commissions</span><span class="shud-v" style="color:var(--ask)" id="commissionsVal">$0</span></div>
-    <div class="shud-sep"></div>
-    <div class="shud-item"><span class="shud-k" data-i18n="surv.daysAlive">Días vivo</span><span class="shud-v" style="color:var(--amber)" id="daysAliveVal">0</span></div>
-  </div>
-
-  <!-- SURVIVAL ALERT -->
-  <div class="survival-alert" id="survivalAlert"></div>
-
-  <!-- SUSPENDED OVERLAY -->
-  <div class="suspended-overlay" id="suspendedOverlay">
-    <div class="suspended-title">⏸ <span data-i18n="surv.suspended">SUSPENDED</span></div>
-    <div class="suspended-sub" id="suspendedReason">Drawdown límite alcanzado</div>
-    <div class="suspended-timer" id="suspendedTimer">60:00</div>
-    <div style="font-family:var(--mono);font-size:10px;color:#333">Usa este tiempo para revisar tu plan</div>
-  </div>
-
-  <!-- ELIMINATED OVERLAY -->
-  <div class="eliminated-overlay" id="eliminatedOverlay">
-    <div style="font-family:'Syne',sans-serif;font-size:48px;font-weight:800;color:var(--ask);letter-spacing:-2px" data-i18n="surv.eliminated">ELIMINADO</div>
-    <div style="font-family:var(--mono);font-size:14px;color:var(--text-dim)" id="eliminatedReason">Risk Score llegó a 0</div>
-    <div style="font-family:var(--mono);font-size:11px;color:#333" id="eliminatedStats"></div>
-    <button onclick="location.reload()" style="margin-top:20px;background:var(--ask);border:none;color:#fff;font-family:var(--mono);font-size:13px;font-weight:700;padding:12px 28px;border-radius:4px;cursor:pointer">VOLVER A INTENTAR</button>
-  </div>
-
   <div class="main-area">
     <div class="topbar" id="topbar"></div>
     <div id="fbUserBar" style="display:none;position:fixed;top:0;right:0;z-index:1000;height:44px;padding:0 16px;display:none;align-items:center;gap:12px;background:var(--panel);border-bottom:1px solid var(--border);border-left:1px solid var(--border)">
@@ -1139,20 +1099,29 @@ onAuthStateChanged(fbAuth, async (user) => {
     if(profileSnap.exists()){
       const profile = profileSnap.val();
       window._playerName = profile.name || user.email.split('@')[0];
-      // Always load balance from Firebase (source of truth — admin can change it)
-      if(typeof window.playerAccount !== 'undefined' && profile.balance !== undefined){
-        window.playerAccount.cashBalance = profile.balance;
+      // Load balance from Firebase — upgrade old $1000 accounts to $100K
+      if(typeof window.playerAccount !== 'undefined'){
+        let bal = profile.balance !== undefined ? profile.balance : 100000;
+        if(bal <= 1000){ // old default was $1000 — upgrade them
+          bal = 100000;
+          set(ref(fbDb, `players/${user.uid}/balance`), bal).catch(()=>{});
+        }
+        window.playerAccount.cashBalance = bal;
       }
     } else {
       // New player with no profile yet (edge case) — create one with $1,000
       window._playerName = user.email.split('@')[0];
-      const startBal = 1000;
+      const startBal = 100000;
       await set(ref(fbDb, `players/${user.uid}`), { name: window._playerName, balance: startBal, lastSeen: Date.now(), joinedAt: Date.now() });
       if(typeof window.playerAccount !== 'undefined') window.playerAccount.cashBalance = startBal;
     }
     const _ov=document.getElementById('fbLoginOverlay'); if(_ov)_ov.style.display='none';
-    // All players start with same config
+    // Init after layout is ready
     try{ survivalInit(); }catch(e){}
+    // Ensure layout is rendered before data flows
+    setTimeout(()=>{
+      try{ sbActivate(_activeSbItem||'chart'); }catch(e){}
+    }, 200);
     const _ub=document.getElementById('fbUserBar'); if(_ub)_ub.style.display='flex';
     const _un=document.getElementById('fbUserName'); if(_un)_un.textContent=(window._playerName||'')+(window._isAdmin?' 👑':'');
     // Hide Sandbox tab from non-admin players — they cannot adjust their own balance
@@ -1186,47 +1155,25 @@ let _marketSyncInterval = null;
 function startMarketSync(){
   if(_marketSyncInterval) clearInterval(_marketSyncInterval);
 
-  // Real-time listener for non-admin players — prices update instantly
-  if(!window._isAdmin && typeof onValue === 'function'){
+  // ALL players run the local engine — no dependency on admin being online
+  // Firebase is used ONLY to sync player positions and leaderboard
+  // The market runs independently in each browser (same seed = same prices)
+  console.log('[Multiplayer] Local engine mode — market runs in every browser');
+
+  // Optional: admin can push market state for cross-browser sync
+  if(window._isAdmin && typeof onValue === 'function'){
     try{
-      onValue(ref(fbDb, 'market/prices'), snap=>{
-        if(!snap.exists() || typeof window.allStocks === 'undefined') return;
-        const prices = snap.val();
-        window.allStocks.forEach(s=>{
-          if(prices[s.sym]){
-            s.price = prices[s.sym].price;
-            if(prices[s.sym].dayHigh) s._dayHigh = prices[s.sym].dayHigh;
-            if(prices[s.sym].dayLow) s._dayLow = prices[s.sym].dayLow;
-            if(prices[s.sym].volume) s._todayVolume = prices[s.sym].volume;
-          }
-        });
+      // Admin receives player trades and can see everyone's flow
+      onValue(ref(fbDb, 'market/trades'), snap=>{
+        // Just log — admin sees all trades
+        if(snap.exists()) console.log('[Admin] Market trades updated');
       });
-      console.log('[Multiplayer] Real-time price listener active');
-    }catch(e){ console.warn('[Multiplayer] onValue not available, using polling'); }
+    }catch(e){}
   }
 
   _marketSyncInterval = setInterval(()=>{
     if(!window._currentUser) return;
-    if(window._isAdmin){
-      // Admin pushes current market state + volume
-      if(typeof window.allStocks !== 'undefined'){
-        const prices = {};
-        window.allStocks.forEach(s=>{ prices[s.sym] = {
-          price: +s.price.toFixed(2),
-          dayHigh: s._dayHigh||s.price,
-          dayLow: s._dayLow||s.price,
-          volume: s._todayVolume||0,
-          openPrice: s._openPrice||s.price,
-          phase: s._phase||'NEUTRAL',
-        }; });
-        set(ref(fbDb, 'market/prices'), prices).catch(()=>{});
-        // Push option flow for multiplayer
-        const flow = window.optionFlowLog ? window.optionFlowLog.slice(0,20) : [];
-        set(ref(fbDb, 'market/optionFlow'), flow).catch(()=>{});
-      }
-    } else {
-      // Fallback polling for players if onValue not available
-    }
+    // All players sync leaderboard regardless of role
     // All players sync their OWN balance to Firebase
     if(typeof window.playerAccount !== 'undefined'){
       const uid = window._currentUser.uid;
@@ -1558,7 +1505,7 @@ function decayOptionInterestAtDayClose(){
    =================================================================== */
 
 const SURVIVAL = {
-  enabled: true,
+  enabled: false, // disabled
   // Costos fijos
   SEAT_FEE_PER_DAY:   500,
   DATA_FEED_PER_DAY:  150,
@@ -3743,7 +3690,7 @@ let currentMode = 'stock';
    =================================================================== */
 
 // ↓↓↓ DEV: change this to set the player's starting cash for this playtest ↓↓↓
-const STARTING_CASH = 1000;
+const STARTING_CASH = 100000;
 // ↑↑↑ -------------------------------------------------------------- ↑↑↑
 
 const playerAccount = {
@@ -4245,6 +4192,8 @@ function renderSandboxSection(){
 
 function renderLayout(){
   const layoutGrid = document.getElementById('layoutGrid');
+  if(!layoutGrid) return; // guard — DOM not ready yet
+  if(!allStocks || !allStocks.length) return; // guard — data not ready
   // Detectar modo de layout según vista activa
   const _1col = ['scanner','news','sector','academy','watchlist'].includes(_activeSbItem);
   const _mmMode = _activeSbItem === 'mmdesk';
@@ -5300,6 +5249,32 @@ function fillStockOrder(side, price, forceQty){
     const cost = qty * bestAsk;
     if(cost > playerAccount.cashBalance){ flashInsufficientCashAlert(cost); return; }
   }
+  if(side==='sell'){
+    // Prevent short selling — player can only sell what they own
+    const pos = getOrCreateStockPosition(currentSym);
+    const ownedQty = Math.max(0, pos ? pos.qty : 0); // no negatives
+    const maxSell = Math.min(qty, ownedQty);
+    if(maxSell <= 0){
+      flashToast(`⚠ No tienes ${currentSym} para vender.`, true);
+      return;
+    }
+    // If trying to sell more than owned, cap it
+    if(maxSell < qty){
+      flashToast(`⚠ Solo tienes ${ownedQty} acciones — vendiendo ${ownedQty}`, false);
+    }
+    // Use maxSell instead of qty
+    const avgFillSell = executeMarketOrderAgainstBook(stock, side, maxSell);
+    try{ playSound('sell'); }catch(e){}
+    flashToast(`${t('toast.sellFill','Sell')} ${maxSell.toLocaleString()}x ${currentSym} @ ${avgFillSell.toFixed(2)}`);
+    try{ survivalChargeCommission('stock', maxSell); survivalRegisterTrade(currentSym,'sell',maxSell); checkSurvivalStatus(); }catch(e){}
+    try{ const _db=window._fbDb; const _ref=window._fbRef; const _set=window._fbSet; const _push=window._fbPush;
+      if(_db&&_ref&&playerAccount.uid){
+        if(_push) _push(_ref(_db,'market/trades'),{uid:playerAccount.uid,name:window._playerName||'Trader',sym:currentSym,side:'sell',qty:maxSell,price:avgFillSell,pnl:+(playerAccount.dayPnL||0).toFixed(2),ts:Date.now()});
+        if(_set) _set(_ref(_db,'leaderboard/'+playerAccount.uid),{name:window._playerName||'Trader',pnl:+(playerAccount.dayPnL||0).toFixed(2),trades:playerAccount.tradeCount||0,cash:+(playerAccount.cashBalance||0).toFixed(2),ts:Date.now()});
+      }
+    }catch(e){}
+    renderAllData(); schedulePersist(); return;
+  }
   // execute against real book (price walking + tape entry)
   const avgFill = executeMarketOrderAgainstBook(stock, side, qty);
   executeShareOrder(currentSym, side, qty, avgFill);
@@ -6226,7 +6201,7 @@ function openContractPopup(stock, strike, optType){
         <div class="cp-tf-row" id="cpTfRow-${key.replace(/[^a-zA-Z0-9]/g,'')}">
           <button data-tf="1m" class="active">1m</button><button data-tf="5m">5m</button><button data-tf="1h">1H</button>
         </div>
-        <div class="cp-chart-canvas"><svg id="cpChartSvg-${key.replace(/[^a-zA-Z0-9]/g,'')}" width="100%" height="100%" preserveAspectRatio="none"></svg></div>
+        <div class="cp-chart-canvas" style="height:200px;background:var(--bg);overflow:hidden"><svg id="cpChartSvg-${key.replace(/[^a-zA-Z0-9]/g,'')}" viewBox="0 0 560 240" width="100%" height="100%" preserveAspectRatio="none" style="display:block"></svg></div>
         <div class="cp-quick-trade">
           <input type="number" id="cpQty-${key.replace(/[^a-zA-Z0-9]/g,'')}" value="1" min="1" style="width:60px;background:#0A0C10;border:1px solid var(--border);border-radius:4px;color:#fff;padding:4px 6px;font-size:11px">
           <button class="cp-buy">BUY</button>
@@ -6259,6 +6234,7 @@ function openContractPopup(stock, strike, optType){
       popup.querySelectorAll('.cp-tabs button').forEach(b=>b.classList.remove('active'));
       popup.querySelectorAll('.cp-pane').forEach(p=>p.classList.remove('active'));
       btn.classList.add('active');
+      // Re-render chart when Chart tab is clicked (SVG needs visible container)
       popup.querySelector(`.cp-pane[data-pane="${btn.dataset.tab}"]`).classList.add('active');
     });
   });
@@ -6347,10 +6323,22 @@ function refreshContractPopup(stock, strike, optType, safeId){
   const svgEl = document.getElementById(`cpChartSvg-${safeId}`);
   if(svgEl){
     const timeframe = openContractPopups[row.key] ? openContractPopups[row.key].timeframe : '1m';
-    const candles = buildOptionCandlesForTimeframe(row.key, row, timeframe);
-    if(candles.length){
-      renderChartSVG(svgEl, candles, 'med'); // reuses the same candle+volume+price-axis renderer built for stock charts
-    }
+    // Use setTimeout to ensure popup is in DOM before rendering chart
+    setTimeout(()=>{
+      const _svgNow = document.getElementById('cpChartSvg-'+safeId);
+      if(!_svgNow) return;
+      // Reset history to force fresh seed
+      if(!optionPriceTickHistory[row.key] || optionPriceTickHistory[row.key].length < 10){
+        optionPriceTickHistory[row.key] = null;
+      }
+      const _candles = buildOptionCandlesForTimeframe(row.key, row, timeframe);
+      if(_candles.length){
+        _svgNow.setAttribute('viewBox','0 0 560 240');
+        _svgNow.setAttribute('preserveAspectRatio','none');
+        _svgNow.style.cssText='width:100%;height:200px;display:block;background:var(--bg)';
+        renderChartSVG(_svgNow, _candles, 'med');
+      }
+    }, 50);
   }
 
   const tapeEl = document.getElementById(`cpTape-${safeId}`);
@@ -6633,7 +6621,16 @@ function renderAllData(){
     }
   } else {
     if(vis.account) renderAccountPanel();
-    if(vis.scanner&&typeof renderScannerPanel==='function')renderScannerPanel();
+    if(vis.scanner&&typeof renderScannerPanel==='function'){
+      const _scanBody = document.getElementById('body-scanner');
+      if(_scanBody && !document.getElementById('scannerWrap')){
+        const _sw = document.createElement('div');
+        _sw.id = 'scannerWrap';
+        _sw.style.cssText = 'height:100%;overflow-y:auto;';
+        _scanBody.appendChild(_sw);
+      }
+      renderScannerPanel();
+    }
     if(vis.darkPool&&typeof renderDarkPoolPanel==='function')renderDarkPoolPanel();
     if(vis.news&&typeof renderNewsPanel==='function')renderNewsPanel();
     if(vis.watchlist&&typeof renderWatchlistPanel==='function')renderWatchlistPanel();
@@ -7658,8 +7655,16 @@ let _scannerFilter = 'movers';
 let _optScanFilter = { type:'all', minIV:0, minVol:0, minOI:0 };
 
 function renderScannerPanel(){
-  const wrap = document.getElementById('scannerWrap');
-  if(!wrap) return;
+  let wrap = document.getElementById('scannerWrap');
+  if(!wrap){
+    const body = document.getElementById('body-scanner');
+    if(!body) return;
+    wrap = document.createElement('div');
+    wrap.id = 'scannerWrap';
+    wrap.style.cssText = 'height:100%;overflow-y:auto;min-height:500px;';
+    body.innerHTML = '';
+    body.appendChild(wrap);
+  }
 
   const tabHtml = `
     <div class="scan-main-tabs">
@@ -7672,11 +7677,14 @@ function renderScannerPanel(){
     const byVol   = [...allStocks].sort((a,b)=>(b._todayVolume||0)-(a._todayVolume||0));
     const gainers = [...allStocks].filter(s=>s.price>s._openPrice).sort((a,b)=>(b.price/b._openPrice)-(a.price/a._openPrice));
     const losers  = [...allStocks].filter(s=>s.price<s._openPrice).sort((a,b)=>(a.price/a._openPrice)-(b.price/b._openPrice));
-    const ivHigh  = [...allStocks].sort((a,b)=>{
-      const ivA = genOptionChainForStock(a, currentExpirationKey)[0]?.iv||0;
-      const ivB = genOptionChainForStock(b, currentExpirationKey)[0]?.iv||0;
-      return ivB - ivA;
-    });
+    const _expKey = currentExpirationKey || (typeof getExpirationKeys==='function' ? getExpirationKeys()[0] : null);
+    const ivHigh  = _expKey ? [...allStocks].sort((a,b)=>{
+      try{
+        const ivA = genOptionChainForStock(a, _expKey)[0]?.iv||0;
+        const ivB = genOptionChainForStock(b, _expKey)[0]?.iv||0;
+        return ivB - ivA;
+      }catch(e){ return 0; }
+    }) : [...allStocks];
 
     const filterHtml = `<div class="scan-filter-row" style="flex-wrap:wrap;gap:4px">
       <button class="scan-filter-btn${_scannerFilter==='movers'?' active':''}"    onclick="_scannerFilter='movers';renderScannerPanel()">${t('scan.movers','🔥 Movers')}</button>
@@ -7691,7 +7699,8 @@ function renderScannerPanel(){
 
     // Unusual options activity — stocks con vol/OI ratio alto
     const unusual = [...allStocks].map(s=>{
-      const stats = computeOptionStats(s);
+      let stats = {totalCallVol:0,totalPutVol:0,putCallRatio:1};
+      try{ stats = computeOptionStats(s); }catch(e){}
       const ratio = stats.totalCallVol + stats.totalPutVol > 0 ?
         (stats.totalCallVol+stats.totalPutVol) / Math.max(1, s._todayVolume * 0.001) : 0;
       return { ...s, _unusualScore: ratio * (stats.putCallRatio > 1.5 || stats.putCallRatio < 0.5 ? 2 : 1) };
@@ -7719,8 +7728,11 @@ function renderScannerPanel(){
       const pos = chg>=0;
       const vol = s._todayVolume||0;
       const volStr = vol>=1e6?(vol/1e6).toFixed(1)+'M':vol>=1000?(vol/1000).toFixed(0)+'K':String(vol);
-      const chain = genOptionChainForStock(s, currentExpirationKey);
-      const atmIV = chain.length ? chain[Math.floor(chain.length/2)].iv : 30;
+      let atmIV = 30;
+      try{
+        const _ek = currentExpirationKey || _expKey;
+        if(_ek){ const chain = genOptionChainForStock(s, _ek); atmIV = chain.length ? chain[Math.floor(chain.length/2)].iv : 30; }
+      }catch(e){}
       const ivRank = Math.min(99, Math.round(atmIV * 1.4));
       const ivClass = ivRank>70?'scan-iv-high':ivRank>40?'scan-iv-med':'scan-iv-low';
       const isCurrent = s.sym===currentSym;
