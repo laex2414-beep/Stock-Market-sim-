@@ -1099,20 +1099,22 @@ onAuthStateChanged(fbAuth, async (user) => {
     if(profileSnap.exists()){
       const profile = profileSnap.val();
       window._playerName = profile.name || user.email.split('@')[0];
-      // Load balance from Firebase — source of truth
+      // Load balance from Firebase — ALWAYS, never from localStorage
       if(typeof window.playerAccount !== 'undefined'){
-        const bal = profile.balance !== undefined ? profile.balance : 1000;
+        const bal = (profile.balance !== undefined && profile.balance > 0) 
+          ? profile.balance 
+          : STARTING_CASH;
         window.playerAccount.cashBalance = bal;
-        // Load positions from Firebase if saved there, else start fresh
+        // Load positions from Firebase
         if(profile.positions){
-          window.playerAccount.stockPositions  = profile.positions.stocks  || {};
-          window.playerAccount.optionPositions = profile.positions.options || {};
+          window.playerAccount.stockPositions  = sanitizePositions(profile.positions.stocks  || {}, 500000);
+          window.playerAccount.optionPositions = sanitizePositions(profile.positions.options || {}, 100000);
         } else {
-          // Don't load from localStorage on login — always fresh from Firebase
           window.playerAccount.stockPositions  = {};
           window.playerAccount.optionPositions = {};
         }
         window.playerAccount.dayPLRealized = profile.dayPL || 0;
+        console.log('[Auth] Balance loaded from Firebase: $'+bal);
       }
     } else {
       // New player — wipe localStorage so old positions don't bleed in
@@ -1150,6 +1152,25 @@ onAuthStateChanged(fbAuth, async (user) => {
       }
     }
     if(window._isAdmin) showAdminPanel();
+    // Admin quick balance button in topbar
+    setTimeout(()=>{
+      const tb = document.getElementById('topbar');
+      if(tb && window._isAdmin && !document.getElementById('adminBalBtn')){
+        const btn = document.createElement('button');
+        btn.id = 'adminBalBtn';
+        btn.textContent = '💰 Mi Balance';
+        btn.style.cssText = 'background:rgba(255,214,0,.15);border:1px solid var(--amber);color:var(--amber);font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:3px;cursor:pointer;margin-left:4px';
+        btn.onclick = ()=>{
+          const v = prompt('Nuevo balance (actual: $'+playerAccount.cashBalance.toFixed(2)+')', playerAccount.cashBalance.toFixed(0));
+          if(!v||isNaN(+v)) return;
+          playerAccount.cashBalance = Math.max(0,+v);
+          try{ window._fbSet(window._fbRef(window._fbDb,'players/'+playerAccount.uid+'/balance'), playerAccount.cashBalance); }catch(e){}
+          renderAllData();
+          flashToast('💰 Balance actualizado: $'+playerAccount.cashBalance.toLocaleString());
+        };
+        tb.appendChild(btn);
+      }
+    }, 500);
     // sync market prices FROM Firebase every 2s
     startMarketSync();
   } else {
@@ -1223,28 +1244,96 @@ function startMarketSync(){
 
 // ========== ADMIN PANEL ==========
 function showAdminPanel(){
-  const panel = document.getElementById('fbAdminPanel');
-  if(!panel) return;
-  panel.style.display = 'block';
-  // listen to all players in real time
-  onValue(ref(fbDb, 'players'), snap=>{
-    if(!snap.exists()) return;
-    const players = snap.val();
-    let html = '<table style="width:100%;border-collapse:collapse;font-family:monospace;font-size:11px">';
-    html += '<tr style="color:#EF9F27;border-bottom:1px solid #333"><td style="padding:4px 8px">NOMBRE</td><td>BALANCE</td><td>ÚLTIMA CONEXIÓN</td><td>ACCIÓN</td></tr>';
-    Object.entries(players).forEach(([uid, p])=>{
-      const last = p.lastSeen ? new Date(p.lastSeen).toLocaleTimeString() : '—';
-      html += `<tr style="border-bottom:1px solid #222">
-        <td style="padding:4px 8px">${p.name||uid.slice(0,8)}</td>
-        <td style="color:#22D47A">$${(p.balance||0).toLocaleString()}</td>
-        <td style="color:#666">${last}</td>
-        <td><button onclick="window._adminSetBalance('${uid}','${p.name||''}',${p.balance||0})" style="background:#EF9F27;color:#000;border:none;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px">Editar $</button></td>
-      </tr>`;
-    });
-    html += '</table>';
-    document.getElementById('fbAdminPlayerList').innerHTML = html;
-  });
+  let panel = document.getElementById('fbAdminPanel');
+  if(!panel){
+    panel = document.createElement('div');
+    panel.id = 'fbAdminPanel';
+    document.body.appendChild(panel);
+  }
+  panel.style.cssText = 'display:flex;flex-direction:column;position:fixed;top:36px;right:8px;width:300px;max-height:80vh;background:var(--panel);border:1px solid var(--border);border-radius:8px;z-index:600;overflow:hidden;font-family:var(--mono);box-shadow:0 8px 32px rgba(0,0,0,.7)';
+  panel.innerHTML = `
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel-elevated);display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-size:11px;font-weight:700;color:var(--amber)">👑 ADMIN</span>
+      <button onclick="document.getElementById('fbAdminPanel').style.display='none'" style="margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--text-dim);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border);flex-shrink:0">
+      <button id="aTabP" onclick="adminTab('p')" style="background:var(--panel-elevated);border:none;color:var(--amber);font-family:var(--mono);font-size:10px;padding:8px;cursor:pointer;font-weight:700">Jugadores</button>
+      <button id="aTabM" onclick="adminTab('m')" style="background:var(--panel);border:none;color:var(--text-dim);font-family:var(--mono);font-size:10px;padding:8px;cursor:pointer">Mercado</button>
+    </div>
+    <div id="adminContent" style="flex:1;overflow-y:auto"></div>`;
+  adminTab('p');
 }
+
+window.adminTab = function(t){
+  const btnP=document.getElementById('aTabP'), btnM=document.getElementById('aTabM');
+  if(btnP){btnP.style.background=t==='p'?'var(--panel-elevated)':'var(--panel)';btnP.style.color=t==='p'?'var(--amber)':'var(--text-dim)';btnP.style.fontWeight=t==='p'?'700':'400';}
+  if(btnM){btnM.style.background=t==='m'?'var(--panel-elevated)':'var(--panel)';btnM.style.color=t==='m'?'var(--amber)':'var(--text-dim)';btnM.style.fontWeight=t==='m'?'700':'400';}
+  const el=document.getElementById('adminContent'); if(!el) return;
+  if(t==='p') adminLoadPlayers(el);
+  if(t==='m') adminLoadMarket(el);
+};
+
+function adminLoadPlayers(el){
+  el.innerHTML='<div style="padding:12px;font-size:9px;color:var(--text-dim)">Cargando...</div>';
+  try{
+    onValue(ref(fbDb,'players'),snap=>{
+      if(!snap.exists()){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-dim)">Sin jugadores</div>';return;}
+      const pp=snap.val();
+      let h=`<div style="padding:5px 10px;font-size:8px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr 68px 72px"><span>Jugador</span><span>Balance</span><span>Acción</span></div>`;
+      Object.entries(pp).forEach(([uid,p])=>{
+        const bal=p.balance||0;
+        const online=p.lastSeen&&Date.now()-p.lastSeen<30000;
+        h+=`<div style="display:grid;grid-template-columns:1fr 68px 72px;padding:7px 10px;border-bottom:.5px solid var(--border);align-items:center;font-size:10px">
+          <div><div style="font-weight:600;color:${online?'var(--bid)':'var(--text)'}">${online?'●':' '} ${p.name||uid.slice(0,8)}</div></div>
+          <div style="font-family:var(--mono);font-size:11px;color:${bal>500?'var(--bid)':'var(--ask)'}">$${bal.toLocaleString()}</div>
+          <div style="display:flex;gap:3px">
+            <button onclick="adminSetBal('${uid}','${p.name||'?'}',${bal})" style="background:rgba(255,214,0,.1);border:1px solid var(--amber);color:var(--amber);font-size:8px;padding:2px 5px;border-radius:3px;cursor:pointer;font-family:var(--mono)">$</button>
+            <button onclick="adminReset('${uid}','${p.name||'?'}')" style="background:rgba(68,138,255,.1);border:1px solid var(--blue);color:var(--blue);font-size:8px;padding:2px 5px;border-radius:3px;cursor:pointer;font-family:var(--mono)">⟳</button>
+            <button onclick="adminKick('${uid}','${p.name||'?'}')" style="background:rgba(229,86,107,.1);border:1px solid var(--ask);color:var(--ask);font-size:8px;padding:2px 5px;border-radius:3px;cursor:pointer;font-family:var(--mono)">✕</button>
+          </div>
+        </div>`;
+      });
+      el.innerHTML=h;
+    },{onlyOnce:true});
+  }catch(e){el.innerHTML='<div style="padding:12px;color:var(--ask)">Error: '+e.message+'</div>';}
+}
+
+function adminLoadMarket(el){
+  el.innerHTML=`<div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+    <div style="font-size:9px;color:var(--text-dim);text-transform:uppercase;margin-bottom:2px">Control del mercado</div>
+    <button onclick="liveEnginePaused=true;flashToast('⏸ Mercado pausado')" style="background:rgba(229,86,107,.1);border:1px solid var(--ask);color:var(--ask);font-family:var(--mono);font-size:11px;font-weight:700;padding:10px;border-radius:4px;cursor:pointer">⏸ Pausar mercado</button>
+    <button onclick="liveEnginePaused=false;flashToast('▶ Mercado reanudado')" style="background:rgba(0,230,118,.1);border:1px solid var(--bid);color:var(--bid);font-family:var(--mono);font-size:11px;font-weight:700;padding:10px;border-radius:4px;cursor:pointer">▶ Reanudar mercado</button>
+    <div style="border-top:1px solid var(--border);padding-top:10px">
+      <button onclick="if(confirm('¿Cerrar el día?'))closeTradingDay()" style="background:rgba(255,214,0,.08);border:1px solid var(--amber);color:var(--amber);font-family:var(--mono);font-size:11px;font-weight:700;padding:10px;border-radius:4px;cursor:pointer;width:100%">📅 Cerrar día</button>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:10px">
+      <button onclick="if(confirm('¿Reset TODOS los jugadores a $1,000?'))adminResetAll()" style="background:rgba(229,86,107,.06);border:1px solid var(--ask);color:var(--ask);font-family:var(--mono);font-size:10px;font-weight:700;padding:10px;border-radius:4px;cursor:pointer;width:100%">⚠ Reset todos → $1,000</button>
+    </div>
+  </div>`;
+}
+
+window.adminSetBal=function(uid,name,cur){
+  const v=prompt('Nuevo balance para '+name+' (actual: $'+cur+')', cur);
+  if(!v||isNaN(+v)) return;
+  set(ref(fbDb,'players/'+uid+'/balance'),Math.max(0,+v)).then(()=>{flashToast('✅ '+name+' → $'+(+v).toLocaleString());adminTab('p');}).catch(e=>flashToast('Error: '+e.message,true));
+};
+window.adminKick=function(uid,name){
+  if(!confirm('¿Eliminar cuenta de '+name+'?')) return;
+  remove(ref(fbDb,'players/'+uid)).then(()=>{flashToast('✅ Cuenta eliminada');adminTab('p');}).catch(e=>flashToast('Error: '+e.message,true));
+};
+window.adminReset=function(uid,name){
+  if(!confirm('¿Reset de '+name+' a $1,000?')) return;
+  set(ref(fbDb,'players/'+uid+'/balance'),1000).then(()=>{flashToast('✅ '+name+' reseteado');adminTab('p');}).catch(e=>flashToast('Error: '+e.message,true));
+};
+window.adminResetAll=function(){
+  get(ref(fbDb,'players')).then(snap=>{
+    if(!snap.exists()) return;
+    const upd={};
+    Object.keys(snap.val()).forEach(uid=>{upd['players/'+uid+'/balance']=1000;});
+    update(ref(fbDb),upd).then(()=>flashToast('✅ Todos reseteados a $1,000'));
+  });
+};
+
 window._adminSetBalance = function(uid, name, currentBal){
   const newBal = prompt(`Nuevo balance para ${name||uid.slice(0,8)}:`, currentBal);
   if(newBal === null) return;
@@ -2303,11 +2392,14 @@ const AVG_VOL_BASE = { low: 1.2e6, med: 3.5e6, high: 8e6, extreme: 14e6 };
    markets (Steps 2-3) come next; for now each strike/expiry combo gets one coherent quote.
    =================================================================== */
 const EXPIRATIONS = [
-  { key:'15m', label:'15 min',  type:'short', minutesToExpiry: 15 },
-  { key:'30m', label:'30 min',  type:'short', minutesToExpiry: 30 },
-  { key:'1h',  label:'1 hora',  type:'short', minutesToExpiry: 60 },
-  { key:'1d',  label:'1 día',   type:'major', minutesToExpiry: 60*8 },
-  { key:'1w',  label:'1 semana',type:'major', minutesToExpiry: 60*8*5 },
+  { key:'15m', label:'15 min',   type:'short',   minutesToExpiry: 15 },
+  { key:'30m', label:'30 min',   type:'short',   minutesToExpiry: 30 },
+  { key:'1h',  label:'1 hora',   type:'short',   minutesToExpiry: 60 },
+  { key:'1d',  label:'1 día',    type:'major',   minutesToExpiry: 60*8 },
+  { key:'1w',  label:'1 semana', type:'major',   minutesToExpiry: 60*8*5 },
+  { key:'1mo', label:'1 mes',    type:'monthly', minutesToExpiry: 60*8*21 },
+  { key:'3mo', label:'3 meses',  type:'monthly', minutesToExpiry: 60*8*63 },
+  { key:'1y',  label:'1 año',    type:'leap',    minutesToExpiry: 60*8*252 },
 ];
 let currentExpirationKey = '1d';
 
@@ -4119,20 +4211,15 @@ function sanitizePositions(positions, maxQty=10000000){
 function applyLoadedState(saved){
   if(!saved) return false;
   if(saved.playerAccount){
-    const bal = saved.playerAccount.cashBalance ?? playerAccount.cashBalance;
-    // Sanity check balance — if it's absurd, wipe it
-    if(bal > 0 && bal < 1e12){
-      playerAccount.cashBalance = bal;
-    } else {
-      console.warn('Corrupt balance in localStorage, resetting:', bal);
-      playerAccount.cashBalance = STARTING_CASH;
-      try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
-      return false; // don't load corrupt state
-    }
+    // NEVER load balance from localStorage — Firebase is source of truth
+    // Only load chart layout and UI preferences from localStorage
     playerAccount.dayPLRealized = saved.playerAccount.dayPLRealized ?? 0;
-    // Sanitize positions — remove any with absurd quantities
-    playerAccount.stockPositions  = sanitizePositions(saved.playerAccount.stockPositions,  500000);
-    playerAccount.optionPositions = sanitizePositions(saved.playerAccount.optionPositions, 100000);
+    // Load positions with sanity check
+    const sp = sanitizePositions(saved.playerAccount.stockPositions,  500000);
+    const op = sanitizePositions(saved.playerAccount.optionPositions, 100000);
+    // Only apply if they look reasonable
+    if(Object.keys(sp).length < 100) playerAccount.stockPositions  = sp;
+    if(Object.keys(op).length < 100) playerAccount.optionPositions = op;
   }
   if(saved.ui){
     if(saved.ui.currentSection) currentSection = saved.ui.currentSection;
@@ -4660,8 +4747,7 @@ function buildPanelBodies(){
       <div class="ts-rows" id="tsRows"></div>`;
     if(vis.optionChain){
       const body = document.getElementById('body-optionChain');
-      if(!body) return;
-      body.innerHTML = `
+      if(body) body.innerHTML = `
         <div class="oc-toolbar">
           <select id="ocExpirySelect">${EXPIRATIONS.map(e=>`<option value="${e.key}" ${e.key===currentExpirationKey?'selected':''}>${e.label}${e.type==='major'?' ★':''}</option>`).join('')}</select>
           <select id="ocStrikeRangeSelect">
@@ -4677,6 +4763,21 @@ function buildPanelBodies(){
         </div>
         <div class="oc-scroll"><div id="ocFlowBar"></div><div class="oc-table" id="ocTable"></div></div>`;
       document.getElementById('ocExpirySelect').addEventListener('change', (e)=>{ currentExpirationKey = e.target.value; renderAllData(); });
+      // Re-attach delegation listener every time (body-optionChain innerHTML resets the element)
+      const _ocBody = document.getElementById('body-optionChain');
+      if(_ocBody){
+        // Remove old listener if exists, then re-add fresh
+        if(_ocBody._ocHandler) _ocBody.removeEventListener('click', _ocBody._ocHandler);
+        _ocBody._ocHandler = function(e){
+          const cell = e.target.closest('.oc-clickable');
+          if(!cell) return;
+          if(e.target.closest('.oc-trade-btn') || e.target.closest('.oc-leg-check')) return;
+          e.stopPropagation();
+          const stock = allStocks.find(s=>s.sym===currentSym);
+          if(stock) openContractPopup(stock, +cell.dataset.strike, cell.dataset.opttype);
+        };
+        _ocBody.addEventListener('click', _ocBody._ocHandler);
+      }
       document.getElementById('ocStrikeRangeSelect').addEventListener('change', (e)=>{
         strikeRangeSetting = e.target.value === 'all' ? 'all' : parseInt(e.target.value);
         renderAllData(); schedulePersist();
@@ -4700,8 +4801,7 @@ function buildPanelBodies(){
       <div class="at-rows" id="atRows"></div>`;
     if(vis.activeOptionTrader){
       const body = document.getElementById('body-activeOptionTrader');
-      if(!body) return;
-      body.innerHTML = `
+      if(body) body.innerHTML = `
         <div class="aot-toolbar">
           <select id="aotStrikeSelect"></select>
           <select id="aotTypeSelect"><option value="call">Call</option><option value="put">Put</option></select>
@@ -4734,8 +4834,7 @@ function buildPanelBodies(){
     }
     if(vis.riskProfile){
       const body = document.getElementById('body-riskProfile');
-      if(!body) return;
-      body.innerHTML = `
+      if(body) body.innerHTML = `
         <div class="rp-builder">
           <div class="rp-builder-label">Spread Personalizado (marca strikes en el Option Chain)</div>
           <div id="rpLegsList"></div>
@@ -4794,8 +4893,7 @@ function buildPanelBodies(){
     }
     if(vis.account){
       const body = document.getElementById('body-account');
-      if(!body) return;
-      body.innerHTML = `
+      if(body) body.innerHTML = `
         <div class="acct-grid" id="acctGrid"></div>
         <div class="acct-positions" id="acctPositions"></div>`;
     }
@@ -4854,8 +4952,7 @@ function buildPanelBodies(){
       <div class="fund-grid" id="fundGrid"></div>`;
     if(vis.optionFlow){
       const body = document.getElementById('body-optionFlow');
-      if(!body) return;
-      body.innerHTML = `
+      if(body) body.innerHTML = `
         <div class="of-filters">
           <select id="ofMinPremium">
             <option value="0">Todo Premium</option>
@@ -4897,8 +4994,7 @@ function buildPanelBodies(){
       <div class="opt-ratio-labels" id="optRatioLabels"></div>`;
     if(vis.calendar){
       const body = document.getElementById('body-calendar');
-      if(!body) return;
-      body.innerHTML = `<div class="pl-cal-grid" id="plCalGrid"></div><div class="pl-cal-legend">
+      if(body) body.innerHTML = `<div class="pl-cal-grid" id="plCalGrid"></div><div class="pl-cal-legend">
         <span><i class="pl-dot" style="background:var(--bid)"></i>Ganador</span>
         <span><i class="pl-dot" style="background:var(--ask)"></i>Perdedor</span>
         <span><i class="pl-dot" style="background:var(--panel-elevated); border:1px solid var(--border)"></i>Sin trades</span>
@@ -4967,8 +5063,7 @@ function buildPanelBodies(){
     }
     if(vis.helpDocs){
       const body = document.getElementById('body-helpDocs');
-      if(!body) return;
-      body.innerHTML = `
+      if(body) body.innerHTML = `
         <div class="help-tabs" id="helpTabs"></div>
         <div class="help-content" id="helpContent"></div>`;
       renderHelpDocsPanel();
@@ -5537,6 +5632,70 @@ function renderPriceAlertsUI(){
 }
 
 
+
+/* ===================================================================
+   BANKRUPTCY SYSTEM — Opciones A, B, D
+   =================================================================== */
+const BANKRUPTCY = {
+  MIN_BALANCE: 10, RESPAWN_AMOUNT: 500,
+  RESPAWN_COOLDOWN: 86400000, LOAN_MAX: 2000,
+  LOAN_INTEREST: 0.10, lastRespawnAt: 0, loanBalance: 0,
+};
+function checkBankruptcy(){
+  if(playerAccount.cashBalance >= BANKRUPTCY.MIN_BALANCE) return;
+  if(document.getElementById('bankruptcyModal')) return;
+  showBankruptcyModal();
+}
+function showBankruptcyModal(){
+  const canRespawn = Date.now()-BANKRUPTCY.lastRespawnAt > BANKRUPTCY.RESPAWN_COOLDOWN;
+  const canLoan = BANKRUPTCY.loanBalance===0;
+  const m = document.createElement('div');
+  m.id='bankruptcyModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:var(--mono)';
+  m.innerHTML=`<div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:28px 32px;max-width:420px;width:90%;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:22px;font-weight:800;color:var(--ask)">💸 SIN CAPITAL</div>
+    <div style="font-size:11px;color:var(--text-dim)">Balance: $${playerAccount.cashBalance.toFixed(2)}. Elige cómo continuar:</div>
+    ${canRespawn?`<div onclick="bankruptcyRespawn()" style="border:1px solid var(--bid);border-radius:6px;padding:14px;cursor:pointer">
+      <div style="font-size:13px;font-weight:700;color:var(--bid);margin-bottom:3px">A — Respawn $500</div>
+      <div style="font-size:10px;color:var(--text-dim)">Gratis una vez cada 24h.</div>
+    </div>`:`<div style="border:1px solid #222;border-radius:6px;padding:14px;opacity:.4">
+      <div style="font-size:13px;color:var(--text-dim)">A — Respawn (disponible en ${Math.ceil((BANKRUPTCY.lastRespawnAt+BANKRUPTCY.RESPAWN_COOLDOWN-Date.now())/3600000)}h)</div>
+    </div>`}
+    ${canLoan?`<div onclick="bankruptcyLoan()" style="border:1px solid var(--amber);border-radius:6px;padding:14px;cursor:pointer">
+      <div style="font-size:13px;font-weight:700;color:var(--amber);margin-bottom:3px">B — Préstamo MM $2,000</div>
+      <div style="font-size:10px;color:var(--text-dim)">10% de tus ganancias hasta liquidar.</div>
+    </div>`:`<div style="border:1px solid #222;border-radius:6px;padding:14px;opacity:.4">
+      <div style="font-size:13px;color:var(--text-dim)">B — Préstamo (deuda pendiente: $${BANKRUPTCY.loanBalance.toFixed(0)})</div>
+    </div>`}
+    <div onclick="bankruptcyBacker()" style="border:1px solid var(--purple);border-radius:6px;padding:14px;cursor:pointer">
+      <div style="font-size:13px;font-weight:700;color:var(--purple);margin-bottom:3px">D — Buscar Sponsor</div>
+      <div style="font-size:10px;color:var(--text-dim)">Publica tu perfil — otros jugadores invierten a cambio de % de ganancias.</div>
+    </div>
+    <button onclick="document.getElementById('bankruptcyModal')?.remove()" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);font-family:var(--mono);font-size:11px;padding:8px;border-radius:4px;cursor:pointer">Cancelar</button>
+  </div>`;
+  document.body.appendChild(m);
+}
+window.bankruptcyRespawn=function(){
+  playerAccount.cashBalance+=BANKRUPTCY.RESPAWN_AMOUNT;
+  BANKRUPTCY.lastRespawnAt=Date.now();
+  document.getElementById('bankruptcyModal')?.remove();
+  flashToast('💸 Respawn +$'+BANKRUPTCY.RESPAWN_AMOUNT);
+  try{window._fbSet&&window._fbSet(window._fbRef(window._fbDb,'players/'+playerAccount.uid+'/balance'),playerAccount.cashBalance);}catch(e){}
+  renderAllData();
+};
+window.bankruptcyLoan=function(){
+  playerAccount.cashBalance+=BANKRUPTCY.LOAN_MAX;
+  BANKRUPTCY.loanBalance=BANKRUPTCY.LOAN_MAX;
+  document.getElementById('bankruptcyModal')?.remove();
+  flashToast('🏦 Préstamo MM +$'+BANKRUPTCY.LOAN_MAX+' — pagas 10% de ganancias');
+  try{window._fbSet&&window._fbSet(window._fbRef(window._fbDb,'players/'+playerAccount.uid+'/balance'),playerAccount.cashBalance);}catch(e){}
+  renderAllData();
+};
+window.bankruptcyBacker=function(){
+  document.getElementById('bankruptcyModal')?.remove();
+  try{window._fbSet&&window._fbSet(window._fbRef(window._fbDb,'backerBoard/'+playerAccount.uid),{name:window._playerName||'Trader',balance:playerAccount.cashBalance,ts:Date.now(),seeking:true});}catch(e){}
+  flashToast('📢 Perfil publicado en Backer Board');
+};
 /* ===================================================================
    ANTI-CHEAT SYSTEM
    Detecta y neutraliza ventajas injustas automáticamente:
@@ -6137,7 +6296,7 @@ function renderOptionChain(stock){
       const val = callRow ? col.fmt(callRow) : '';
       const color = callRow && col.color ? col.color(callRow) : '';
       const heatStyle = (key==='volume' && callRow) ? heatBgStyleFor(callRow) : '';
-      body += `<div class="oc-cell oc-clickable ${callIsITM?'itm-cell':''}" data-strike="${strike}" data-opttype="call" style="${color?'color:'+color+';':''}${heatStyle}">${val}</div>`;
+      body += `<div class="oc-cell oc-clickable ${callIsITM?'itm-cell':''}" data-strike="${strike}" data-opttype="call" style="${color?'color:'+color+';':''}${heatStyle}" data-cp="1">${val}</div>`;
     });
     const isAccumulating = (callRow && callRow.accumulating) || (putRow && putRow.accumulating);
     const isNewMoney = (callRow && callRow.isNewMoney) || (putRow && putRow.isNewMoney);
@@ -6151,7 +6310,7 @@ function renderOptionChain(stock){
       const val = putRow ? col.fmt(putRow) : '';
       const color = putRow && col.color ? col.color(putRow) : '';
       const heatStyle = (key==='volume' && putRow) ? heatBgStyleFor(putRow) : '';
-      body += `<div class="oc-cell oc-clickable ${putIsITM?'itm-cell':''}" data-strike="${strike}" data-opttype="put" style="${color?'color:'+color+';':''}${heatStyle}">${val}</div>`;
+      body += `<div class="oc-cell oc-clickable ${putIsITM?'itm-cell':''}" data-strike="${strike}" data-opttype="put" style="${color?'color:'+color+';':''}${heatStyle}" data-cp="1">${val}</div>`;
     });
     body += `<div class="oc-cell oc-trade-cell">${putRow?`<input type="checkbox" class="oc-leg-check" data-strike="${strike}" data-opttype="put" ${isLegSelected(strike,'put')?'checked':''}><button class="oc-trade-btn buy" data-strike="${strike}" data-opttype="put">B</button><button class="oc-trade-btn sell" data-strike="${strike}" data-opttype="put">S</button>`:''}</div>`;
     body += '</div>';
@@ -6159,11 +6318,6 @@ function renderOptionChain(stock){
 
   ocTable.innerHTML = header + body;
   setupOptionColumnDrag(ocTable);
-  // Remove previous delegated listener to prevent stacking
-  if(ocTable._ocClickHandler){
-    ocTable.removeEventListener('click', ocTable._ocClickHandler);
-    ocTable._ocClickHandler = null;
-  }
   ocTable.querySelectorAll('.oc-leg-check').forEach(cb=>{
     cb.addEventListener('change', (e)=>{
       e.stopPropagation();
@@ -6179,19 +6333,7 @@ function renderOptionChain(stock){
       fillOptionOrder(stock, strike, optType, side);
     });
   });
-  // Event delegation — survives innerHTML re-renders
-  // Remove old listener first to avoid duplicates
-  ocTable._ocClickHandler && ocTable.removeEventListener('click', ocTable._ocClickHandler);
-  ocTable._ocClickHandler = function(e){
-    // Find the closest .oc-clickable parent
-    const cell = e.target.closest('.oc-clickable');
-    if(!cell) return;
-    // Don't trigger if clicking a button or checkbox inside the cell
-    if(e.target.closest('.oc-trade-btn') || e.target.closest('.oc-leg-check')) return;
-    e.stopPropagation();
-    openContractPopup(stock, +cell.dataset.strike, cell.dataset.opttype);
-  };
-  ocTable.addEventListener('click', ocTable._ocClickHandler);
+  // Clicks handled by body-optionChain delegation (set once in buildPanelBodies)
 }
 /* ===================================================================
    ROUTING SELECTORS (Step B) — the player picks SWEEP/BLOCK/SPLIT/NORMAL
@@ -7003,6 +7145,7 @@ function renderAllData(){
     checkStopOrderFills();
     checkPriceAlerts();
     if(typeof updateSurvivalHUD === 'function') updateSurvivalHUD();
+    try{ checkBankruptcy(); }catch(e){}
     if(vis.activeTrader) renderActiveTrader(displayPrice, displayVol);
     if(vis.activeOptionTrader) renderActiveOptionTrader(currentMode==='stock' ? stockRef : null);
     if(vis.optionChain) renderOptionChain(currentMode==='stock' ? stockRef : null);
